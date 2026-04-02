@@ -1,0 +1,67 @@
+{
+  "name": "00 - Carica Database Fornitori YEG",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/carica-suppliers",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Access-Control-Allow-Methods", "value": "POST, OPTIONS" },
+              { "name": "Access-Control-Allow-Headers", "value": "Content-Type" }
+            ]
+          }
+        }
+      },
+      "id": "webhook-suppliers",
+      "name": "Webhook Carica Suppliers",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "api-carica-suppliers"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Riceve il database fornitori JSON e lo salva nello static data GLOBALE\n// Questo static data è condiviso tra tutti i workflow\nconst input = $input.first().json;\nconst suppliersData = input.body || input;\n\n// Salva nello static data globale del workflow 01\n// NOTA: ogni workflow ha il proprio static data.\n// Per condividerlo, salviamo qui e il workflow 01 leggerà da qui.\nconst staticData = $getWorkflowStaticData('global');\n\nstaticData.suppliers_db = suppliersData;\n\nconst totale = suppliersData.metadata?.totale_fornitori || 0;\nconst categorie = Object.keys(suppliersData.categorie || {}).length;\n\nreturn {\n  json: {\n    success: true,\n    message: `Database fornitori caricato: ${totale} fornitori in ${categorie} categorie`,\n    totale_fornitori: totale,\n    categorie: categorie\n  }\n};"
+      },
+      "id": "salva-suppliers",
+      "name": "Salva Database Fornitori",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "risposta-suppliers",
+      "name": "Risposta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [700, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Carica Suppliers": {
+      "main": [
+        [{ "node": "Salva Database Fornitori", "type": "main", "index": 0 }]
+      ]
+    },
+    "Salva Database Fornitori": {
+      "main": [
+        [{ "node": "Risposta", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    { "name": "L'Oréal Eventi" },
+    { "name": "Setup" }
+  ]
+}

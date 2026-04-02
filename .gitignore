@@ -1,0 +1,23 @@
+# Dependencies
+frontend/node_modules/
+frontend/.next/
+
+# Env files - NON caricare credenziali
+frontend/.env.local
+frontend/.env*.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Archivio (file legacy, non necessari)
+_archivio/
+
+# Log
+*.log
+nohup.out

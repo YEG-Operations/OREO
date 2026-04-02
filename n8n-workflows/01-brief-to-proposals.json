@@ -1,0 +1,147 @@
+{
+  "name": "01 - Brief Evento → Elaborazione Proposte",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger-manual",
+      "name": "Test Manuale",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======= DATI MOCK dal CSV JotForm =======\n// Sostituisci questo nodo con il Webhook JotForm quando vai in produzione\n\nconst mockBrief = {\n  submission_date: 'Mar 25, 2026',\n  nome: 'Emanuele',\n  cognome: 'Campanini',\n  email: 'emanuele.campanini@yeg.cloud',\n  nome_evento: 'Convention farmacie',\n  tipologia_evento: 'Riunione',\n  data_inizio: 'Apr 21, 2026',\n  orario_inizio: '10:00 AM',\n  data_fine: 'Apr 22, 2026',\n  orario_fine: '08:00 PM',\n  citta: 'Milano',\n  sede: \"Sede L'Oréal\",\n  numero_partecipanti: 50,\n  budget_totale: 10000,\n\n  // Componenti attivate\n  segreteria: 'Sì',\n  app_evento: 'Sì',\n\n  agenda: 'Arrivo\\nWelcome coffee\\nPlenaria\\nPranzo\\nPlenaria\\nCoffee Break\\nCena outside\\n\\nColazione\\nTeam building\\nPranzo\\nPlenaria\\nCoffe Break\\nPlenaria\\nCena in hotel',\n\n  // Hotel\n  hotel_attivo: 'Sì',\n  hotel_checkin: 'Apr 21, 2026',\n  hotel_checkout: 'Apr 22, 2026',\n  camere_singole: 25,\n  camere_doppie: 12,\n  hotel_note: '',\n\n  // Location\n  location_attiva: 'Sì',\n  setup_sala: 'Teatro',\n  setup_av: 'Proiettore\\nAudio\\nMicrofoni',\n  location_note: '',\n\n  // F&B\n  coffee_break_attivo: 'Sì',\n  coffee_break_note: 'giorno 1 mattino e pomeriggio\\ngiorno 2 coffee break',\n  pranzo_attivo: 'Sì',\n  pranzo_note: '',\n  cena_attiva: 'Sì',\n  cena_note: '',\n\n  // Trasporti\n  trasporti_attivi: 'Sì',\n  trasporti_note: '',\n\n  // Attività extra\n  attivita_extra_attive: 'Sì',\n  attivita_extra_note: 'cena con spettacolo'\n};\n\nreturn { json: mockBrief };"
+      },
+      "id": "mock-data",
+      "name": "Dati Mock (CSV JotForm)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Carica il database fornitori YEG\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.suppliers_db) {\n  staticData.suppliers_db = { categorie: {}, metadata: { totale_fornitori: 0 } };\n}\nreturn $input.all();"
+      },
+      "id": "carica-db",
+      "name": "Carica DB Fornitori",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======= PARSING BRIEF =======\n// Struttura il brief e identifica le componenti richieste\nconst raw = $input.first().json;\n\nconst brief = {\n  // Identificazione\n  submission_id: `SUB-${Date.now()}`,\n  data_compilazione: raw.submission_date || new Date().toISOString(),\n\n  // Referente\n  nome_referente: `${raw.nome || ''} ${raw.cognome || ''}`.trim(),\n  email: raw.email || '',\n\n  // Evento\n  nome_evento: raw.nome_evento || '',\n  tipologia_evento: raw.tipologia_evento || '',\n  data_inizio: raw.data_inizio || '',\n  orario_inizio: raw.orario_inizio || '',\n  data_fine: raw.data_fine || '',\n  orario_fine: raw.orario_fine || '',\n  citta: raw.citta || '',\n  sede: raw.sede || '',\n  numero_partecipanti: parseInt(raw.numero_partecipanti) || 0,\n  budget_totale: parseFloat(raw.budget_totale) || 0,\n\n  // Agenda completa\n  agenda: raw.agenda || '',\n\n  // --- COMPONENTI ATTIVATE ---\n  componenti: {}\n};\n\n// Identifica le componenti attive dal form\nconst componenti = brief.componenti;\nconst elementiRichiesti = [];\n\n// HOTEL\nif (raw.hotel_attivo === 'Sì') {\n  componenti.hotel = {\n    attivo: true,\n    checkin: raw.hotel_checkin || '',\n    checkout: raw.hotel_checkout || '',\n    camere_singole: parseInt(raw.camere_singole) || 0,\n    camere_doppie: parseInt(raw.camere_doppie) || 0,\n    totale_camere: (parseInt(raw.camere_singole) || 0) + (parseInt(raw.camere_doppie) || 0),\n    note: raw.hotel_note || ''\n  };\n  elementiRichiesti.push('hotel');\n}\n\n// LOCATION\nif (raw.location_attiva === 'Sì') {\n  componenti.location = {\n    attivo: true,\n    setup_sala: raw.setup_sala || '',\n    setup_av: raw.setup_av || '',\n    note: raw.location_note || ''\n  };\n  elementiRichiesti.push('location');\n}\n\n// CATERING (coffee break + pranzo + cena come unica categoria)\nconst hasCatering = raw.coffee_break_attivo === 'Sì' || raw.pranzo_attivo === 'Sì' || raw.cena_attiva === 'Sì';\nif (hasCatering) {\n  componenti.catering = {\n    attivo: true,\n    coffee_break: raw.coffee_break_attivo === 'Sì' ? (raw.coffee_break_note || 'Sì') : null,\n    pranzo: raw.pranzo_attivo === 'Sì' ? (raw.pranzo_note || 'Sì') : null,\n    cena: raw.cena_attiva === 'Sì' ? (raw.cena_note || 'Sì') : null\n  };\n  elementiRichiesti.push('catering');\n}\n\n// TRASPORTI\nif (raw.trasporti_attivi === 'Sì') {\n  componenti.trasporti = {\n    attivo: true,\n    note: raw.trasporti_note || ''\n  };\n  elementiRichiesti.push('trasporti');\n}\n\n// ATTIVITÀ EXTRA / ENTERTAINMENT\nif (raw.attivita_extra_attive === 'Sì') {\n  componenti.attivita_extra = {\n    attivo: true,\n    note: raw.attivita_extra_note || ''\n  };\n  elementiRichiesti.push('entertainment');\n}\n\n// SEGRETERIA\nif (raw.segreteria === 'Sì') {\n  componenti.segreteria = { attivo: true };\n}\n\n// APP EVENTO\nif (raw.app_evento === 'Sì') {\n  componenti.app_evento = { attivo: true };\n}\n\n// Se nessun elemento identificato, aggiungi location come default\nif (elementiRichiesti.length === 0) {\n  elementiRichiesti.push('location');\n}\n\nbrief.elementi_richiesti = elementiRichiesti;\n\nreturn { json: brief };"
+      },
+      "id": "parse-brief",
+      "name": "Parsing Brief",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======= GENERA PROMPT PER QWEN =======\nconst brief = $input.first().json;\nconst staticData = $getWorkflowStaticData('global');\nconst suppliersDb = staticData.suppliers_db || null;\n\n// --- PRE-FILTRAGGIO FORNITORI YEG ---\nlet fornitoriYEG = '';\nif (suppliersDb && suppliersDb.categorie) {\n  const mapCat = {\n    'location': ['location'],\n    'catering': ['catering', 'ristoranti'],\n    'entertainment': ['entertainment'],\n    'trasporti': ['trasporti'],\n    'hotel': ['hotel']\n  };\n\n  const cittaBrief = (brief.citta || '').toLowerCase();\n  let sezioni = [];\n\n  for (const elemento of brief.elementi_richiesti) {\n    const catKeys = mapCat[elemento] || [elemento];\n    for (const catKey of catKeys) {\n      const cat = suppliersDb.categorie[catKey];\n      if (!cat) continue;\n\n      const match = cat.fornitori.filter(f => {\n        const fc = (f.citta || '').toLowerCase();\n        if (!fc || !cittaBrief) return false;\n        return fc.includes(cittaBrief) || cittaBrief.includes(fc);\n      });\n\n      if (match.length > 0) {\n        sezioni.push(`\\n### ${cat.nome_display} - Fornitori YEG a ${brief.citta}:`);\n        match.slice(0, 20).forEach(f => {\n          const det = [];\n          if (f.capacita) det.push(`Capienza: ${f.capacita}`);\n          if (f.prezzo_range) det.push(`Prezzo: ${f.prezzo_range}`);\n          if (f.indirizzo) det.push(`Zona: ${f.indirizzo}`);\n          if (f.note) det.push(`Note: ${f.note}`);\n          sezioni.push(`- ${f.nome}${det.length ? ' | ' + det.join(' | ') : ''}`);\n        });\n      }\n    }\n  }\n\n  if (sezioni.length > 0) {\n    fornitoriYEG = '\\n\\n--- FORNITORI YEG (database agenzia) ---' + sezioni.join('\\n') + '\\n--- FINE FORNITORI YEG ---';\n  }\n}\n\n// --- COSTRUISCI SEZIONE COMPONENTI ---\nconst comp = brief.componenti;\nlet dettaglioComponenti = '';\n\nif (comp.hotel) {\n  dettaglioComponenti += `\\n\\nHOTEL RICHIESTO:\\n- Check-in: ${comp.hotel.checkin} | Check-out: ${comp.hotel.checkout}\\n- Camere singole: ${comp.hotel.camere_singole} | Doppie: ${comp.hotel.camere_doppie} | Totale: ${comp.hotel.totale_camere}\\n- Note: ${comp.hotel.note || 'nessuna'}`;\n}\n\nif (comp.location) {\n  dettaglioComponenti += `\\n\\nLOCATION RICHIESTA:\\n- Setup sala: ${comp.location.setup_sala}\\n- Audio/Video: ${comp.location.setup_av}\\n- Note: ${comp.location.note || 'nessuna'}`;\n}\n\nif (comp.catering) {\n  dettaglioComponenti += `\\n\\nCATERING RICHIESTO:`;\n  if (comp.catering.coffee_break) dettaglioComponenti += `\\n- Coffee break/Welcome drink: ${comp.catering.coffee_break}`;\n  if (comp.catering.pranzo) dettaglioComponenti += `\\n- Pranzo: ${comp.catering.pranzo}`;\n  if (comp.catering.cena) dettaglioComponenti += `\\n- Cena: ${comp.catering.cena}`;\n}\n\nif (comp.trasporti) {\n  dettaglioComponenti += `\\n\\nTRASPORTI RICHIESTI:\\n- Note: ${comp.trasporti.note || 'da definire'}`;\n}\n\nif (comp.attivita_extra) {\n  dettaglioComponenti += `\\n\\nATTIVITÀ EXTRA / ENTERTAINMENT:\\n- Richiesta: ${comp.attivita_extra.note || 'da definire'}`;\n}\n\nconst prompt = `Sei un senior event planner dell'agenzia YEG Events. Devi elaborare proposte concrete per questo evento corporate.\n\n--- BRIEF EVENTO ---\nReferente: ${brief.nome_referente} (${brief.email})\nEvento: ${brief.nome_evento}\nTipologia: ${brief.tipologia_evento}\nDate: ${brief.data_inizio} ${brief.orario_inizio} → ${brief.data_fine} ${brief.orario_fine}\nCittà: ${brief.citta}\nSede indicata: ${brief.sede || 'nessuna'}\nPartecipanti: ${brief.numero_partecipanti}\nBudget totale: ${brief.budget_totale}€\n\nAGENDA PREVISTA:\n${brief.agenda}\n${dettaglioComponenti}\n--- FINE BRIEF ---\n${fornitoriYEG}\n\nGenera ESATTAMENTE 10 proposte per OGNUNA di queste categorie: ${brief.elementi_richiesti.join(', ')}\n\nCRITERI DI SELEZIONE:\n1. CAPIENZA: deve ospitare ${brief.numero_partecipanti} persone. Per hotel: servono ${comp.hotel ? comp.hotel.totale_camere + ' camere' : 'N/A'}.\n2. BUDGET: il budget TOTALE è ${brief.budget_totale}€ per TUTTO l'evento. Distribuisci realisticamente.\n3. CITTÀ: ${brief.citta}${brief.sede ? '. Il cliente ha indicato come sede: ' + brief.sede : ''}.\n4. SPECIFICHE: rispetta i dettagli (es. setup ${comp.location ? comp.location.setup_sala : ''}, ${comp.catering ? 'servizio catering multi-giorno' : ''}).\n\nREGOLE FORNITORI YEG:\n- Includi fornitori YEG SOLO se soddisfano capienza, budget, città e tipo di servizio.\n- Non forzare mai un fornitore inadatto. Segnala con is_yeg_supplier: true.\n- Completa a 10 con fornitori reali della zona.\n\nPer ogni proposta:\n{\n  \"nome\": \"Nome reale\",\n  \"descrizione\": \"Cosa offre (max 100 parole)\",\n  \"motivo_match\": \"Perché risolve QUESTA specifica esigenza del brief (2-3 frasi concrete)\",\n  \"prezzo_stimato\": numero_euro,\n  \"capacita\": \"capienza/disponibilità\",\n  \"indirizzo\": \"indirizzo o zona\",\n  \"punti_forza\": [\"p1\", \"p2\", \"p3\"],\n  \"adeguatezza_budget\": 0-100,\n  \"note\": \"criticità o info extra\",\n  \"sito_web\": \"URL\",\n  \"contatto\": \"tel/email\",\n  \"immagine_url\": \"URL immagine reale dal sito ufficiale\",\n  \"is_yeg_supplier\": true/false\n}\n\nRispondi SOLO con JSON valido:\n{\n  \"categorie\": {\n    \"nome_categoria\": {\n      \"nome_display\": \"Nome Categoria\",\n      \"budget_allocato\": stima_euro,\n      \"proposte\": [ ...10 proposte... ]\n    }\n  }\n}`;\n\nreturn {\n  json: {\n    brief: brief,\n    prompt: prompt,\n    elementi_richiesti: brief.elementi_richiesti\n  }\n};"
+      },
+      "id": "genera-prompt",
+      "name": "Genera Prompt AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer INSERISCI_QUI_LA_TUA_QWEN_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"qwen-plus\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Sei un esperto event planner italiano. Rispondi SEMPRE e SOLO con JSON valido, senza markdown o testo aggiuntivo.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ],\n  \"temperature\": 0.7,\n  \"max_tokens\": 8000,\n  \"response_format\": { \"type\": \"json_object\" }\n}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "qwen-api",
+      "name": "QWEN AI - Genera Proposte",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parsing risposta QWEN e creazione progetto\nconst input = $input.first().json;\nconst brief = $('Genera Prompt AI').first().json.brief;\n\nlet proposteAI;\ntry {\n  const content = input.choices[0].message.content;\n  proposteAI = typeof content === 'string' ? JSON.parse(content) : content;\n} catch (e) {\n  const content = input.choices[0].message.content;\n  const jsonMatch = content.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    proposteAI = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('Impossibile estrarre JSON dalla risposta AI: ' + content.substring(0, 200));\n  }\n}\n\nconst progetto = {\n  id: `PRJ-${Date.now()}`,\n  stato: 'nuovo',\n  data_creazione: new Date().toISOString(),\n  brief: brief,\n  proposte: proposteAI.categorie || proposteAI,\n  selezioni_manager: {},\n  costi_reali: {},\n  note_manager: '',\n  storico: [{\n    data: new Date().toISOString(),\n    azione: 'Progetto creato da brief',\n    utente: 'sistema'\n  }]\n};\n\nreturn { json: progetto };"
+      },
+      "id": "parse-proposte",
+      "name": "Struttura Progetto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1360, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Salva il progetto nello static data\nconst progetto = $input.first().json;\nconst staticData = $getWorkflowStaticData('global');\n\nif (!staticData.progetti) staticData.progetti = {};\nif (!staticData.indice_progetti) staticData.indice_progetti = [];\n\nstaticData.progetti[progetto.id] = progetto;\nstaticData.indice_progetti.push({\n  id: progetto.id,\n  nome_evento: progetto.brief.nome_evento,\n  cliente: progetto.brief.nome_referente,\n  data_creazione: progetto.data_creazione,\n  stato: progetto.stato\n});\n\nreturn { json: { success: true, progetto_id: progetto.id, progetto: progetto } };"
+      },
+      "id": "salva-progetto",
+      "name": "Salva Progetto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1580, 300]
+    }
+  ],
+  "connections": {
+    "Test Manuale": {
+      "main": [
+        [{ "node": "Dati Mock (CSV JotForm)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Dati Mock (CSV JotForm)": {
+      "main": [
+        [{ "node": "Carica DB Fornitori", "type": "main", "index": 0 }]
+      ]
+    },
+    "Carica DB Fornitori": {
+      "main": [
+        [{ "node": "Parsing Brief", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parsing Brief": {
+      "main": [
+        [{ "node": "Genera Prompt AI", "type": "main", "index": 0 }]
+      ]
+    },
+    "Genera Prompt AI": {
+      "main": [
+        [{ "node": "QWEN AI - Genera Proposte", "type": "main", "index": 0 }]
+      ]
+    },
+    "QWEN AI - Genera Proposte": {
+      "main": [
+        [{ "node": "Struttura Progetto", "type": "main", "index": 0 }]
+      ]
+    },
+    "Struttura Progetto": {
+      "main": [
+        [{ "node": "Salva Progetto", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    { "name": "L'Oréal Eventi" },
+    { "name": "Brief Processing" }
+  ]
+}

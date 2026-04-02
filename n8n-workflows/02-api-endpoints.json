@@ -1,0 +1,276 @@
+{
+  "name": "02 - API Endpoints per Interfaccia Web",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "api/progetti",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, OPTIONS" },
+              { "name": "Access-Control-Allow-Headers", "value": "Content-Type" }
+            ]
+          }
+        }
+      },
+      "id": "get-progetti",
+      "name": "GET Lista Progetti",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 100],
+      "webhookId": "api-progetti-list"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Restituisce la lista di tutti i progetti\nconst staticData = $getWorkflowStaticData('global');\nconst indice = staticData.indice_progetti || [];\nconst progetti = staticData.progetti || {};\n\n// Restituisci sia l'indice che i dati completi\nconst risultato = indice.map(item => {\n  const progetto = progetti[item.id];\n  return {\n    id: item.id,\n    nome_evento: progetto?.brief?.nome_evento || item.nome_evento,\n    cliente: progetto?.brief?.nome_cliente || item.cliente,\n    azienda: progetto?.brief?.azienda || '',\n    data_evento: progetto?.brief?.data_evento || '',\n    data_creazione: item.data_creazione,\n    stato: progetto?.stato || item.stato,\n    numero_partecipanti: progetto?.brief?.numero_partecipanti || '',\n    budget_totale: progetto?.brief?.budget_totale || '',\n    citta: progetto?.brief?.citta || ''\n  };\n});\n\nreturn { json: { progetti: risultato } };"
+      },
+      "id": "lista-progetti",
+      "name": "Prepara Lista Progetti",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "risposta-lista",
+      "name": "Risposta Lista",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [700, 100]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "api/progetto/:id",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, OPTIONS" },
+              { "name": "Access-Control-Allow-Headers", "value": "Content-Type" }
+            ]
+          }
+        }
+      },
+      "id": "get-progetto",
+      "name": "GET Dettaglio Progetto",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 350],
+      "webhookId": "api-progetto-detail"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Restituisce il dettaglio di un singolo progetto\nconst staticData = $getWorkflowStaticData('global');\nconst progetti = staticData.progetti || {};\nconst progettoId = $input.first().json.params?.id || $input.first().json.query?.id;\n\nif (!progettoId || !progetti[progettoId]) {\n  return { json: { error: 'Progetto non trovato', id: progettoId } };\n}\n\nreturn { json: progetti[progettoId] };"
+      },
+      "id": "dettaglio-progetto",
+      "name": "Carica Dettaglio Progetto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 350]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "risposta-dettaglio",
+      "name": "Risposta Dettaglio",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [700, 350]
+    },
+    {
+      "parameters": {
+        "httpMethod": "PUT",
+        "path": "api/progetto/aggiorna",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, OPTIONS" },
+              { "name": "Access-Control-Allow-Headers", "value": "Content-Type" }
+            ]
+          }
+        }
+      },
+      "id": "update-progetto",
+      "name": "PUT Aggiorna Progetto",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 600],
+      "webhookId": "api-progetto-update"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggiorna un progetto con i dati dell'event manager\n// (costi reali, selezioni, note)\nconst staticData = $getWorkflowStaticData('global');\nconst progetti = staticData.progetti || {};\nconst input = $input.first().json.body || $input.first().json;\n\nconst progettoId = input.progetto_id;\n\nif (!progettoId || !progetti[progettoId]) {\n  return { json: { error: 'Progetto non trovato', id: progettoId } };\n}\n\nconst progetto = progetti[progettoId];\n\n// Aggiorna i campi modificabili dall'event manager\nif (input.costi_reali) {\n  progetto.costi_reali = { ...progetto.costi_reali, ...input.costi_reali };\n}\n\nif (input.selezioni_manager) {\n  progetto.selezioni_manager = { ...progetto.selezioni_manager, ...input.selezioni_manager };\n}\n\nif (input.note_manager !== undefined) {\n  progetto.note_manager = input.note_manager;\n}\n\nif (input.stato) {\n  progetto.stato = input.stato;\n}\n\n// Aggiungi allo storico\nprogetto.storico.push({\n  data: new Date().toISOString(),\n  azione: input.azione_log || 'Progetto aggiornato dall\\'event manager',\n  utente: input.utente || 'event_manager'\n});\n\n// Salva\nstaticData.progetti[progettoId] = progetto;\n\n// Aggiorna anche l'indice\nif (staticData.indice_progetti) {\n  const idx = staticData.indice_progetti.findIndex(p => p.id === progettoId);\n  if (idx >= 0) {\n    staticData.indice_progetti[idx].stato = progetto.stato;\n  }\n}\n\nreturn { json: { success: true, progetto: progetto } };"
+      },
+      "id": "aggiorna-progetto",
+      "name": "Aggiorna Progetto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "risposta-aggiorna",
+      "name": "Risposta Aggiornamento",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [700, 600]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/progetto/ricerca-web",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, OPTIONS" },
+              { "name": "Access-Control-Allow-Headers", "value": "Content-Type" }
+            ]
+          }
+        }
+      },
+      "id": "ricerca-web",
+      "name": "POST Ricerca Web",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 850],
+      "webhookId": "api-ricerca-web"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepara il prompt per QWEN per ricercare info su un fornitore/servizio\nconst input = $input.first().json.body || $input.first().json;\n\nconst query = input.query || '';\nconst citta = input.citta || '';\n\nconst prompt = `Sei un esperto event planner italiano. Cerca e fornisci informazioni dettagliate su: ${query}\n\nFornisci per ogni risultato trovato (massimo 5 risultati):\n- Nome completo del fornitore/venue/servizio\n- Descrizione breve\n- Indirizzo o zona (se noto)\n- Range di prezzo stimato\n- Sito web (se noto)\n- Punti di forza\n- Contatti (telefono, email se noti)\n\nConcentrati sulla zona di ${citta || 'Italia'}.\nRispondi SOLO con JSON valido:\n{\n  \"risultati\": [\n    {\n      \"titolo\": \"Nome Fornitore\",\n      \"descrizione\": \"Descrizione dettagliata...\",\n      \"indirizzo\": \"Indirizzo/zona\",\n      \"prezzo\": \"Range prezzo stimato\",\n      \"sito_web\": \"url se noto\",\n      \"punti_forza\": [\"punto1\", \"punto2\"],\n      \"contatto\": \"info contatto\"\n    }\n  ]\n}`;\n\nreturn { json: { prompt } };"
+      },
+      "id": "prepara-ricerca",
+      "name": "Prepara Prompt Ricerca AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 850]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer INSERISCI_QUI_LA_TUA_QWEN_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"qwen-plus\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Sei un esperto event planner italiano con conoscenza approfondita di location, catering, fornitori di servizi per eventi in Italia. Rispondi SEMPRE e SOLO con JSON valido.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ],\n  \"temperature\": 0.7,\n  \"max_tokens\": 3000,\n  \"response_format\": { \"type\": \"json_object\" }\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "qwen-ricerca",
+      "name": "QWEN AI - Ricerca Info",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 850]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parsing risposta QWEN ricerca\nconst input = $input.first().json;\nlet risultati = [];\n\ntry {\n  const content = input.choices[0].message.content;\n  const parsed = typeof content === 'string' ? JSON.parse(content) : content;\n  risultati = parsed.risultati || [];\n} catch (e) {\n  try {\n    const content = input.choices[0].message.content;\n    const jsonMatch = content.match(/\\{[\\s\\S]*\\}/);\n    if (jsonMatch) {\n      const parsed = JSON.parse(jsonMatch[0]);\n      risultati = parsed.risultati || [];\n    }\n  } catch (e2) {\n    risultati = [{ titolo: 'Errore nella ricerca', descrizione: 'Non è stato possibile elaborare la risposta AI' }];\n  }\n}\n\nreturn { json: { risultati } };"
+      },
+      "id": "parse-ricerca",
+      "name": "Parsing Risultati AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 850]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "risposta-ricerca",
+      "name": "Risposta Ricerca",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1180, 850]
+    }
+  ],
+  "connections": {
+    "GET Lista Progetti": {
+      "main": [
+        [{ "node": "Prepara Lista Progetti", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepara Lista Progetti": {
+      "main": [
+        [{ "node": "Risposta Lista", "type": "main", "index": 0 }]
+      ]
+    },
+    "GET Dettaglio Progetto": {
+      "main": [
+        [{ "node": "Carica Dettaglio Progetto", "type": "main", "index": 0 }]
+      ]
+    },
+    "Carica Dettaglio Progetto": {
+      "main": [
+        [{ "node": "Risposta Dettaglio", "type": "main", "index": 0 }]
+      ]
+    },
+    "PUT Aggiorna Progetto": {
+      "main": [
+        [{ "node": "Aggiorna Progetto", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggiorna Progetto": {
+      "main": [
+        [{ "node": "Risposta Aggiornamento", "type": "main", "index": 0 }]
+      ]
+    },
+    "POST Ricerca Web": {
+      "main": [
+        [{ "node": "Prepara Prompt Ricerca AI", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepara Prompt Ricerca AI": {
+      "main": [
+        [{ "node": "QWEN AI - Ricerca Info", "type": "main", "index": 0 }]
+      ]
+    },
+    "QWEN AI - Ricerca Info": {
+      "main": [
+        [{ "node": "Parsing Risultati AI", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parsing Risultati AI": {
+      "main": [
+        [{ "node": "Risposta Ricerca", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    { "name": "L'Oréal Eventi" },
+    { "name": "API Endpoints" }
+  ]
+}
