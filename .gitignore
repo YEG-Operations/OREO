@@ -2,9 +2,15 @@
 frontend/node_modules/
 frontend/.next/
 
-# Env files - NON caricare credenziali
+# Env files - NON caricare MAI credenziali su GitHub
+frontend/.env
 frontend/.env.local
 frontend/.env*.local
+frontend/.env.example
+frontend/.env.local.example
+**/.env
+**/.env.local
+**/.env*.local
 
 # Python
 __pycache__/
