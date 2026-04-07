@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
     data_fine: progetto.data_fine,
     numero_partecipanti: progetto.numero_partecipanti,
     brief,
+    email_operatore: progetto.email_operatore || '',
   })
 
   // Log l'azione
@@ -59,6 +60,7 @@ export async function POST(req: NextRequest) {
     success: true,
     email: {
       to: proposta.contatto || '',
+      from: progetto.email_operatore || '',
       subject: email.subject,
       body: email.body,
     },

@@ -73,6 +73,19 @@ export default function PropostaClientePage() {
   const categorie = [...new Set(proposte.map(p => p.categoria))] as CategoriaServizio[]
   const selectedCount = proposte.filter(p => p.selezionato_cliente).length
 
+  // Impostazioni costi dal progetto
+  const markup = progetto.markup_percentuale ?? 0
+  const iva = progetto.iva_percentuale ?? 0
+  const nascondiFornitore = progetto.nascondi_fornitori ?? true
+
+  // Totale selezionate per il cliente
+  const totaleCliente = proposte
+    .filter(p => p.selezionato_cliente)
+    .reduce((s, p) => {
+      const base = p.costo_reale || p.prezzo_stimato || 0
+      return s + base * (1 + markup / 100)
+    }, 0)
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       {/* Header */}
@@ -82,7 +95,7 @@ export default function PropostaClientePage() {
         </div>
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Proposta per {progetto.nome_evento}</h1>
         <p className="text-gray-600">
-          {progetto.citta} - {progetto.data_inizio} / {progetto.data_fine} - {progetto.numero_partecipanti} partecipanti
+          {progetto.citta} · {progetto.data_inizio} / {progetto.data_fine} · {progetto.numero_partecipanti} partecipanti
         </p>
         <p className="text-sm text-gray-500 mt-2">
           Seleziona la proposta preferita per ogni categoria (puoi selezionarne anche piu di una).
@@ -94,12 +107,33 @@ export default function PropostaClientePage() {
         <CategorySection
           key={cat}
           categoria={cat}
-          proposte={proposte.filter(p => p.categoria === cat)}
+          proposte={proposte.filter(p => p.categoria === cat && p.selezionato_manager)}
           mode="cliente"
           progettoId={progetto.id}
+          markup={markup}
+          iva={iva}
+          nascondiFornitore={nascondiFornitore}
           onToggleSelect={toggleSelect}
         />
       ))}
+
+      {/* Totale selezionate */}
+      {selectedCount > 0 && totaleCliente > 0 && (
+        <div className="card mb-4 flex items-center justify-between">
+          <span className="text-sm text-gray-600">Totale proposte selezionate:</span>
+          <span className="font-semibold text-gray-900">
+            {totaleCliente.toLocaleString('it-IT')} EUR
+            {iva > 0 && <span className="text-xs text-gray-500 ml-1">(+ IVA {iva}%)</span>}
+          </span>
+        </div>
+      )}
+
+      {/* Frasi standard costi */}
+      {progetto.frasi_standard_costi && (
+        <div className="card mb-4 text-xs text-gray-500 italic">
+          {progetto.frasi_standard_costi}
+        </div>
+      )}
 
       {/* Conferma */}
       <div className="sticky bottom-0 bg-white border-t shadow-lg p-4 mt-8 -mx-4 flex items-center justify-between">

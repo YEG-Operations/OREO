@@ -34,10 +34,14 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     }
 
     case 'update_proposta': {
-      const { proposta_id, costo_reale, note } = body
+      const { proposta_id, ...rest } = body
+      const allowed = ['nome','descrizione','motivo_match','pro','contro','punti_forza',
+        'prezzo_stimato','costo_reale','capacita','indirizzo','contatto','sito_web','note',
+        'da_verificare','markup_percentuale','iva_percentuale']
       const updates: Record<string, unknown> = {}
-      if (costo_reale !== undefined) updates.costo_reale = costo_reale
-      if (note !== undefined) updates.note = note
+      for (const k of allowed) {
+        if (rest[k] !== undefined) updates[k] = rest[k]
+      }
       await supabase.from('proposte').update(updates).eq('id', proposta_id)
       return NextResponse.json({ success: true })
     }
@@ -62,6 +66,27 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         azione: 'Proposta inviata al cliente',
         utente: 'event_manager',
       })
+      return NextResponse.json({ success: true })
+    }
+
+    case 'update_settings': {
+      // Aggiornamento impostazioni progetto (costi, operatore, ecc.)
+      const allowedSettings = [
+        'email_operatore',
+        'markup_percentuale',
+        'iva_percentuale',
+        'fee_agenzia_percentuale',
+        'frasi_standard_costi',
+        'nascondi_fornitori',
+        'note_manager',
+      ]
+      const updates: Record<string, unknown> = {}
+      for (const k of allowedSettings) {
+        if (body[k] !== undefined) updates[k] = body[k]
+      }
+      if (Object.keys(updates).length > 0) {
+        await supabase.from('progetti').update(updates).eq('id', params.id)
+      }
       return NextResponse.json({ success: true })
     }
 

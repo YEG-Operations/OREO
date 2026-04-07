@@ -3,9 +3,253 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import type { Progetto, Proposta, CategoriaServizio } from '@/lib/types'
-import { STATI_LABELS, STATI_COLORS, CATEGORIE_LABELS } from '@/lib/types'
+import { STATI_LABELS, STATI_COLORS, CATEGORIE_LABELS, MARKUP_STANDARD } from '@/lib/types'
 import BriefSummary from '@/components/BriefSummary'
 import CategorySection from '@/components/CategorySection'
+
+// Modal per aggiunta proposta manuale con ricerca AI opzionale
+function AddPropostaModal({
+  categoria,
+  progettoId,
+  onClose,
+  onAdded,
+}: {
+  categoria: CategoriaServizio
+  progettoId: string
+  onClose: () => void
+  onAdded: (proposte: Proposta[]) => void
+}) {
+  const [nome, setNome] = useState('')
+  const [parametri, setParametri] = useState('')
+  const [cercando, setCercando] = useState(false)
+  const [aggiungo, setAggiungo] = useState(false)
+
+  const cercaConAI = async () => {
+    setCercando(true)
+    try {
+      const res = await fetch('/api/cerca-proposta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ progetto_id: progettoId, categoria, parametri_extra: parametri }),
+      })
+      const data = await res.json()
+      if (data.proposte?.length > 0) {
+        onAdded(data.proposte)
+        onClose()
+      } else {
+        alert('Nessuna proposta trovata. Prova a modificare i parametri.')
+      }
+    } catch {
+      alert('Errore nella ricerca AI')
+    }
+    setCercando(false)
+  }
+
+  const aggiungiManuale = async () => {
+    if (!nome.trim()) return
+    setAggiungo(true)
+    try {
+      const res = await fetch(`/api/progetti/${progettoId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          azione: 'add_proposta',
+          proposta: { categoria, nome: nome.trim(), fonte: 'manager', selezionato_manager: true },
+        }),
+      })
+      const data = await res.json()
+      if (data.proposta) {
+        onAdded([data.proposta])
+        onClose()
+      }
+    } catch {
+      alert('Errore nell\'aggiunta')
+    }
+    setAggiungo(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+        <div className="p-6 border-b flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">
+            Aggiungi proposta — {CATEGORIE_LABELS[categoria]}
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+        </div>
+        <div className="p-6 space-y-4">
+          {/* Ricerca AI */}
+          <div className="p-4 bg-purple-50 rounded-xl border border-purple-200">
+            <h4 className="font-medium text-purple-900 mb-1">Ricerca AI</h4>
+            <p className="text-xs text-purple-700 mb-3">Descrivi requisiti specifici e l&apos;AI cercherà 3 fornitori pertinenti</p>
+            <textarea
+              className="w-full text-sm border border-purple-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white"
+              rows={3}
+              placeholder="Es: hotel 5 stelle con spa, vista lago, almeno 150 camere..."
+              value={parametri}
+              onChange={e => setParametri(e.target.value)}
+            />
+            <button
+              onClick={cercaConAI}
+              disabled={cercando}
+              className="mt-2 w-full text-sm bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 font-medium"
+            >
+              {cercando ? 'Ricerca AI in corso... (attendere)' : 'Cerca con AI (3 proposte)'}
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-xs text-gray-400">oppure</span>
+            <div className="flex-1 h-px bg-gray-200" />
+          </div>
+
+          {/* Aggiunta manuale */}
+          <div>
+            <h4 className="font-medium text-gray-900 mb-2">Aggiungi manuale</h4>
+            <input
+              type="text"
+              className="input w-full"
+              placeholder="Nome fornitore o proposta..."
+              value={nome}
+              onChange={e => setNome(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && aggiungiManuale()}
+            />
+            <button
+              onClick={aggiungiManuale}
+              disabled={!nome.trim() || aggiungo}
+              className="mt-2 w-full text-sm btn-secondary disabled:opacity-50"
+            >
+              {aggiungo ? 'Aggiunta...' : 'Aggiungi scheda vuota'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Pannello impostazioni costi
+function CostSettingsPanel({
+  progetto,
+  onSave,
+}: {
+  progetto: Progetto
+  onSave: (updates: Partial<Progetto>) => void
+}) {
+  const [markup, setMarkup] = useState(progetto.markup_percentuale ?? 0)
+  const [iva, setIva] = useState(progetto.iva_percentuale ?? 22)
+  const [fee, setFee] = useState(progetto.fee_agenzia_percentuale ?? 0)
+  const [frasi, setFrasi] = useState(progetto.frasi_standard_costi ?? '')
+  const [nascondi, setNascondi] = useState(progetto.nascondi_fornitori ?? true)
+  const [emailOp, setEmailOp] = useState(progetto.email_operatore ?? '')
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    const updates = {
+      markup_percentuale: markup,
+      iva_percentuale: iva,
+      fee_agenzia_percentuale: fee,
+      frasi_standard_costi: frasi,
+      nascondi_fornitori: nascondi,
+      email_operatore: emailOp,
+    }
+    await fetch(`/api/progetti/${progetto.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ azione: 'update_settings', ...updates }),
+    })
+    onSave(updates)
+    setSaving(false)
+  }
+
+  return (
+    <div className="card mb-6 space-y-5">
+      <h3 className="font-semibold text-gray-900 text-base">Impostazioni Costi & Output</h3>
+
+      {/* Operatore */}
+      <div>
+        <label className="label text-xs">Email Operatore YEG</label>
+        <input type="email" className="input" value={emailOp} onChange={e => setEmailOp(e.target.value)}
+          placeholder="operatore@yegevents.it" />
+        <p className="text-xs text-gray-400 mt-1">Usato come mittente nelle richieste ai fornitori</p>
+      </div>
+
+      {/* Markup */}
+      <div>
+        <label className="label text-xs">Markup sul costo interno (%)</label>
+        <div className="flex flex-wrap gap-2 mb-2">
+          {MARKUP_STANDARD.map(m => (
+            <button key={m} onClick={() => setMarkup(m)}
+              className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+                markup === m ? 'bg-yeg-500 text-white border-yeg-500' : 'border-gray-300 hover:border-yeg-300'
+              }`}>
+              {m}%
+            </button>
+          ))}
+          <span className="text-xs text-gray-400 self-center">o custom:</span>
+          <input type="number" className="input w-24 text-sm py-1" value={markup} min={0} max={100} step={0.5}
+            onChange={e => setMarkup(parseFloat(e.target.value) || 0)} />
+        </div>
+        <p className="text-xs text-gray-400">Prezzo cliente = costo interno × (1 + {markup}%)</p>
+      </div>
+
+      {/* IVA */}
+      <div>
+        <label className="label text-xs">IVA (%)</label>
+        <div className="flex items-center gap-3">
+          {[0, 10, 22].map(v => (
+            <button key={v} onClick={() => setIva(v)}
+              className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+                iva === v ? 'bg-gray-700 text-white border-gray-700' : 'border-gray-300 hover:border-gray-400'
+              }`}>
+              {v === 0 ? 'Esente' : `${v}%`}
+            </button>
+          ))}
+          <input type="number" className="input w-20 text-sm py-1" value={iva} min={0} max={100}
+            onChange={e => setIva(parseFloat(e.target.value) || 0)} />
+        </div>
+      </div>
+
+      {/* Fee agenzia */}
+      <div>
+        <label className="label text-xs">Fee agenzia sul totale (%)</label>
+        <div className="flex items-center gap-2">
+          <input type="number" className="input w-28" value={fee} min={0} max={100} step={0.5}
+            onChange={e => setFee(parseFloat(e.target.value) || 0)} />
+          <span className="text-sm text-gray-500">% applicata al totale progetto</span>
+        </div>
+      </div>
+
+      {/* Nascondi fornitori */}
+      <div>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" checked={nascondi} onChange={e => setNascondi(e.target.checked)}
+            className="w-4 h-4 rounded text-yeg-500" />
+          <div>
+            <div className="text-sm font-medium text-gray-900">Nascondi nomi fornitori nella proposta al cliente</div>
+            <div className="text-xs text-gray-500">Appariranno come &quot;Fornitore A&quot;, ecc. Hotel e Location mostrano sempre il nome reale.</div>
+          </div>
+        </label>
+      </div>
+
+      {/* Frasi standard costi */}
+      <div>
+        <label className="label text-xs">Frasi standard sezione costi</label>
+        <textarea className="input min-h-[80px] text-sm" value={frasi} onChange={e => setFrasi(e.target.value)}
+          placeholder="Es: La presente quotazione è valida per le numeriche indicate. I costi sono da intendersi al netto di IVA. Validità offerta: 30 giorni." />
+      </div>
+
+      <div className="flex justify-end">
+        <button onClick={handleSave} disabled={saving} className="btn-primary text-sm">
+          {saving ? 'Salvataggio...' : 'Salva Impostazioni'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -14,7 +258,9 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [generating, setGenerating] = useState(false)
-  const [tab, setTab] = useState<'proposte' | 'brief'>('proposte')
+  const [tab, setTab] = useState<'proposte' | 'brief' | 'costi'>('proposte')
+  const [showCostSettings, setShowCostSettings] = useState(false)
+  const [addModal, setAddModal] = useState<CategoriaServizio | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -67,33 +313,24 @@ export default function ProjectDetailPage() {
     })
   }
 
-  const addManual = async (categoria: CategoriaServizio) => {
-    const nome = prompt('Nome fornitore/proposta:')
-    if (!nome) return
-    const res = await fetch(`/api/progetti/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        azione: 'add_proposta',
-        proposta: { categoria, nome, fonte: 'manager', selezionato_manager: true }
-      })
-    })
-    const data = await res.json()
-    if (data.proposta) setProposte(prev => [...prev, data.proposta])
+  const addManual = (categoria: CategoriaServizio) => {
+    setAddModal(categoria)
+  }
+
+  const onProposteAdded = (nuove: Proposta[]) => {
+    setProposte(prev => [...prev, ...nuove])
   }
 
   const rigeneraProposte = async () => {
     if (!confirm('Vuoi rigenerare le proposte AI? Le proposte AI esistenti verranno sostituite.')) return
     setGenerating(true)
 
-    // Fire & forget — la generazione AI impiega 2-3 minuti
     fetch('/api/genera-proposte', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ progetto_id: id }),
     }).catch(() => {})
 
-    // Poll ogni 10 secondi per vedere se le proposte sono arrivate
     const poll = setInterval(async () => {
       try {
         const res = await fetch(`/api/progetti/${id}`)
@@ -110,11 +347,10 @@ export default function ProjectDetailPage() {
       } catch { /* ignore */ }
     }, 10000)
 
-    // Timeout dopo 5 minuti
     setTimeout(() => {
       clearInterval(poll)
       setGenerating(false)
-      load() // ricarica comunque
+      load()
     }, 300000)
   }
 
@@ -145,10 +381,19 @@ export default function ProjectDetailPage() {
   if (loading) return <div className="text-center py-16 text-gray-400">Caricamento...</div>
   if (!progetto) return <div className="text-center py-16 text-red-500">Progetto non trovato</div>
 
+  const markup = progetto.markup_percentuale ?? 0
+  const iva = progetto.iva_percentuale ?? 22
+
   // Raggruppa proposte per categoria
   const categorie = [...new Set(proposte.map(p => p.categoria))] as CategoriaServizio[]
   const selectedCount = proposte.filter(p => p.selezionato_manager).length
-  const totaleBudget = proposte.filter(p => p.selezionato_manager).reduce((s, p) => s + (p.costo_reale || p.prezzo_stimato || 0), 0)
+
+  // Calcola totale con markup e IVA
+  const totaleCostoInterno = proposte
+    .filter(p => p.selezionato_manager)
+    .reduce((s, p) => s + (p.costo_reale || p.prezzo_stimato || 0), 0)
+  const totalePrezzoCliente = totaleCostoInterno * (1 + markup / 100)
+  const totalePrezzoConIva = totalePrezzoCliente * (1 + iva / 100)
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -160,17 +405,23 @@ export default function ProjectDetailPage() {
             <span className={`badge ${STATI_COLORS[progetto.stato]}`}>{STATI_LABELS[progetto.stato]}</span>
           </div>
           <p className="text-gray-600">
-            {progetto.azienda} - {progetto.citta} - {progetto.numero_partecipanti} partecipanti
-            {progetto.budget_totale > 0 && ` - Budget: ${progetto.budget_totale.toLocaleString('it-IT')} EUR`}
+            {progetto.azienda} · {progetto.citta} · {progetto.numero_partecipanti} partecipanti
+            {progetto.budget_totale > 0 && ` · Budget: ${progetto.budget_totale.toLocaleString('it-IT')} EUR`}
           </p>
+          {progetto.email_operatore && (
+            <p className="text-xs text-gray-400 mt-0.5">Operatore: {progetto.email_operatore}</p>
+          )}
         </div>
-        <div className="flex gap-3">
-          <button onClick={rigeneraProposte} disabled={generating} className="btn-secondary">
-            {generating ? 'Generazione AI in corso...' : 'Rigenera Proposte AI'}
+        <div className="flex gap-2 flex-wrap justify-end">
+          <button onClick={() => setShowCostSettings(s => !s)} className="btn-ghost text-sm">
+            Impostazioni Costi
+          </button>
+          <button onClick={rigeneraProposte} disabled={generating} className="btn-secondary text-sm">
+            {generating ? 'Generazione AI...' : 'Rigenera Proposte AI'}
           </button>
           {progetto.stato !== 'inviato' && progetto.stato !== 'confermato' && (
-            <button onClick={inviaAlCliente} disabled={sending || selectedCount === 0} className="btn-primary">
-              {sending ? 'Invio...' : `Invia al Cliente (${selectedCount} proposte)`}
+            <button onClick={inviaAlCliente} disabled={sending || selectedCount === 0} className="btn-primary text-sm">
+              {sending ? 'Invio...' : `Invia al Cliente (${selectedCount})`}
             </button>
           )}
           {progetto.token_cliente && progetto.stato === 'inviato' && (
@@ -179,7 +430,7 @@ export default function ProjectDetailPage() {
                 navigator.clipboard.writeText(`${window.location.origin}/proposta/${progetto.token_cliente}`)
                 alert('Link copiato!')
               }}
-              className="btn-secondary"
+              className="btn-secondary text-sm"
             >
               Copia Link Proposta
             </button>
@@ -187,19 +438,58 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      {/* Budget bar */}
-      {progetto.budget_totale > 0 && (
-        <div className="card mb-6 flex items-center gap-4">
-          <span className="text-sm font-medium text-gray-600">Budget:</span>
-          <div className="flex-1 h-3 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${totaleBudget <= progetto.budget_totale ? 'bg-green-500' : 'bg-red-500'}`}
-              style={{ width: `${Math.min(100, (totaleBudget / progetto.budget_totale) * 100)}%` }}
-            />
+      {/* Pannello impostazioni costi (collassabile) */}
+      {showCostSettings && progetto && (
+        <CostSettingsPanel
+          progetto={progetto}
+          onSave={updates => setProgetto(prev => prev ? { ...prev, ...updates } : null)}
+        />
+      )}
+
+      {/* Budget bar / Riepilogo costi */}
+      {totaleCostoInterno > 0 && (
+        <div className="card mb-6">
+          <div className="flex items-center gap-4 mb-3">
+            <span className="text-sm font-medium text-gray-600 w-32">Costo interno:</span>
+            <span className="text-sm font-semibold text-gray-900">
+              {totaleCostoInterno.toLocaleString('it-IT')} EUR
+            </span>
           </div>
-          <span className={`text-sm font-semibold ${totaleBudget <= progetto.budget_totale ? 'text-green-600' : 'text-red-600'}`}>
-            {totaleBudget.toLocaleString('it-IT')} / {progetto.budget_totale.toLocaleString('it-IT')} EUR
-          </span>
+          {markup > 0 && (
+            <div className="flex items-center gap-4 mb-3">
+              <span className="text-sm font-medium text-gray-600 w-32">Prezzo cliente ({markup}%):</span>
+              <span className="text-sm font-semibold text-blue-700">
+                {totalePrezzoCliente.toLocaleString('it-IT')} EUR
+              </span>
+            </div>
+          )}
+          {iva > 0 && (
+            <div className="flex items-center gap-4 mb-3">
+              <span className="text-sm font-medium text-gray-600 w-32">Con IVA ({iva}%):</span>
+              <span className="text-sm font-semibold text-gray-700">
+                {totalePrezzoConIva.toLocaleString('it-IT')} EUR
+              </span>
+            </div>
+          )}
+          {progetto.budget_totale > 0 && (
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-medium text-gray-600 w-32">Budget cliente:</span>
+              <div className="flex-1 h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${totalePrezzoCliente <= progetto.budget_totale ? 'bg-green-500' : 'bg-red-500'}`}
+                  style={{ width: `${Math.min(100, (totalePrezzoCliente / progetto.budget_totale) * 100)}%` }}
+                />
+              </div>
+              <span className={`text-sm font-semibold ${totalePrezzoCliente <= progetto.budget_totale ? 'text-green-600' : 'text-red-600'}`}>
+                {totalePrezzoCliente.toLocaleString('it-IT')} / {progetto.budget_totale.toLocaleString('it-IT')} EUR
+              </span>
+            </div>
+          )}
+          {progetto.frasi_standard_costi && (
+            <div className="mt-3 pt-3 border-t text-xs text-gray-500 italic">
+              {progetto.frasi_standard_costi}
+            </div>
+          )}
         </div>
       )}
 
@@ -251,6 +541,8 @@ export default function ProjectDetailPage() {
                 proposte={proposte.filter(p => p.categoria === cat)}
                 mode="manager"
                 progettoId={progetto.id}
+                markup={markup}
+                iva={iva}
                 onToggleSelect={toggleSelect}
                 onUpdate={updateProposta}
                 onDelete={deleteProposta}
@@ -259,6 +551,16 @@ export default function ProjectDetailPage() {
             ))
           )}
         </div>
+      )}
+
+      {/* Modal aggiunta proposta */}
+      {addModal && (
+        <AddPropostaModal
+          categoria={addModal}
+          progettoId={progetto.id}
+          onClose={() => setAddModal(null)}
+          onAdded={onProposteAdded}
+        />
       )}
     </div>
   )

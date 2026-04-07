@@ -69,6 +69,14 @@ export interface Progetto {
   componenti_richieste: string[]
   note_manager: string | null
   token_cliente: string
+  // Operatore YEG che gestisce la richiesta
+  email_operatore: string | null
+  // Impostazioni costi
+  markup_percentuale: number | null      // % markup sul costo interno → prezzo cliente
+  iva_percentuale: number | null         // % IVA da applicare
+  fee_agenzia_percentuale: number | null // % fee agenzia sul totale
+  frasi_standard_costi: string | null    // Testo standard sezione costi nell'output
+  nascondi_fornitori: boolean            // Nasconde nomi fornitori nella vista cliente
   proposte?: Proposta[]
   created_at: string
   updated_at: string
@@ -120,8 +128,9 @@ export interface ComponenteCatering {
   attivo: boolean
   servizi: {
     coffee_break?: { quantita: number; note: string }
-    pranzo?: { quantita: number; note: string }
-    cena?: { quantita: number; note: string }
+    coffee_station?: { attivo: boolean; note: string }
+    pranzo?: { quantita: number; interno: boolean; note: string }
+    cena?: { quantita: number; interna: boolean; note: string }
     aperitivo?: { quantita: number; note: string }
   }
   esigenze_alimentari: string
@@ -130,7 +139,7 @@ export interface ComponenteCatering {
 
 export interface ComponenteTrasporti {
   attivo: boolean
-  tipo: string // 'transfer_aeroporto', 'bus_interno', 'navetta'
+  tipo: string[]
   tratte: string[]
   note: string
 }
@@ -168,11 +177,17 @@ export interface Proposta {
   selezionato_manager: boolean
   selezionato_cliente: boolean
   ordine: number
+  da_verificare: boolean
+  markup_percentuale: number | null  // null = usa il default del progetto
+  iva_percentuale: number | null     // null = usa 22% di default
 }
 
 // Form brief - campi del form
 export interface BriefFormData {
-  // Referente
+  // Operatore YEG che gestisce la richiesta
+  email_operatore: string
+
+  // Referente cliente
   nome_referente: string
   cognome_referente: string
   email: string
@@ -193,7 +208,7 @@ export interface BriefFormData {
   budget_flessibile: boolean
   agenda: string
 
-  // Componenti
+  // Hotel
   hotel_attivo: boolean
   hotel_checkin: string
   hotel_checkout: string
@@ -202,28 +217,36 @@ export interface BriefFormData {
   hotel_stelle_minime: number
   hotel_note: string
 
+  // Location
   location_attiva: boolean
   location_setup: string
   location_av: string[]
   location_tipologia: string
   location_note: string
 
+  // Catering
   catering_attivo: boolean
   coffee_break_num: number
+  coffee_station: boolean           // Postazione caffè sempre disponibile
   pranzo_num: number
+  pranzo_interno: boolean           // true = in hotel/venue, false = ristorante esterno
   cena_num: number
+  cena_interna: boolean             // true = in hotel/venue, false = ristorante esterno
   aperitivo_num: number
   esigenze_alimentari: string
   catering_note: string
 
+  // Trasporti (semplificati)
   trasporti_attivi: boolean
-  trasporti_tipo: string[]
+  trasporti_tipo: string[]          // ['Transfer Aeroporto/Stazione', 'Trasferimenti infra-evento']
   trasporti_note: string
 
+  // Entertainment
   entertainment_attivo: boolean
   entertainment_tipo: string
   entertainment_note: string
 
+  // Team Building
   teambuilding_attivo: boolean
   teambuilding_note: string
 
@@ -261,3 +284,6 @@ export const STATI_COLORS: Record<StatoProgetto, string> = {
   confermato: 'bg-green-100 text-green-800',
   archiviato: 'bg-gray-100 text-gray-800',
 }
+
+// Opzioni markup standard
+export const MARKUP_STANDARD = [5, 10, 15, 20, 25, 30]

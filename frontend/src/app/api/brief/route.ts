@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
     agenda: form.agenda,
     componenti_richieste: componenti,
     stato: 'nuovo',
+    email_operatore: form.email_operatore || null,
   }).select().single()
 
   if (error) {

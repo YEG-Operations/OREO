@@ -12,6 +12,8 @@ interface EmailContext {
   numero_partecipanti: number
   // Dettagli specifici dal brief
   brief: Record<string, unknown>
+  // Email operatore YEG che gestisce la richiesta
+  email_operatore?: string
 }
 
 interface EmailTemplate {
@@ -30,14 +32,18 @@ DETTAGLI EVENTO:
 - Partecipanti: ${ctx.numero_partecipanti || 'da definire'}`
 
   const specific = getCategorySpecificText(ctx)
+  const operatoreInfo = ctx.email_operatore
+    ? `\nPer rispondere a questa email, scrivete a: ${ctx.email_operatore}`
+    : ''
+
   const closing = `
 
 Sareste disponibili nelle date indicate? Potreste inviarci un preventivo dettagliato?
 
-Restiamo a disposizione per qualsiasi chiarimento.
+Restiamo a disposizione per qualsiasi chiarimento.${operatoreInfo}
 
 Cordiali saluti,
-YEG Events`
+YEG Events${ctx.email_operatore ? `\n${ctx.email_operatore}` : ''}`
 
   return {
     subject: getSubject(ctx),

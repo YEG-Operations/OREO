@@ -10,7 +10,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   // Cerca progetto per token_cliente
   const { data: progetto, error } = await supabase
     .from('progetti')
-    .select('id, nome_evento, tipologia_evento, citta, data_inizio, data_fine, numero_partecipanti, budget_totale, stato, token_cliente')
+    .select('id, nome_evento, tipologia_evento, citta, data_inizio, data_fine, numero_partecipanti, budget_totale, stato, token_cliente, markup_percentuale, iva_percentuale, nascondi_fornitori, frasi_standard_costi')
     .eq('token_cliente', params.id)
     .single()
 

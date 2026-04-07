@@ -11,10 +11,11 @@ const TIPOLOGIE_EVENTO = [
 const SETUP_SALA = ['Teatro', 'Banquet', 'Classroom', 'Cabaret', 'Standing', 'Boardroom', 'U-Shape']
 const AV_OPTIONS = ['Proiettore', 'LED Wall', 'Audio', 'Microfoni', 'Regia video', 'Streaming', 'Traduzione simultanea']
 const TIPOLOGIE_LOCATION = ['Qualsiasi', 'Hotel con sale', 'Museo', 'Teatro', 'Loft/Industriale', 'Palazzo storico', 'Rooftop', 'Spazio congressi', 'Ristorante con sala privata', 'Esterno/Giardino']
-const TRASPORTI_TIPO = ['Transfer aeroporto', 'Bus navetta', 'Auto blu/NCC', 'Noleggio bus giornaliero', 'Transfer stazione']
+const TRASPORTI_TIPO = ['Transfer Aeroporto/Stazione', 'Trasferimenti infra-evento']
 const ENTERTAINMENT_TIPO = ['DJ', 'Band/Musica live', 'Speaker/Motivatore', 'Sportivo/Testimonial', 'Show/Spettacolo', 'Animazione', 'Team building ludico']
 
 const initialForm: BriefFormData = {
+  email_operatore: '',
   nome_referente: '', cognome_referente: '', email: '', telefono: '', azienda: '',
   nome_evento: '', tipologia_evento: '', data_inizio: '', orario_inizio: '09:00',
   data_fine: '', orario_fine: '18:00', citta: '', sede_indicata: '',
@@ -23,7 +24,8 @@ const initialForm: BriefFormData = {
   camere_doppie: 0, hotel_stelle_minime: 4, hotel_note: '',
   location_attiva: false, location_setup: 'Teatro', location_av: [],
   location_tipologia: 'Qualsiasi', location_note: '',
-  catering_attivo: false, coffee_break_num: 0, pranzo_num: 0, cena_num: 0,
+  catering_attivo: false, coffee_break_num: 0, coffee_station: false,
+  pranzo_num: 0, pranzo_interno: true, cena_num: 0, cena_interna: true,
   aperitivo_num: 0, esigenze_alimentari: '', catering_note: '',
   trasporti_attivi: false, trasporti_tipo: [], trasporti_note: '',
   entertainment_attivo: false, entertainment_tipo: '', entertainment_note: '',
@@ -70,7 +72,7 @@ export default function BriefPage() {
     }
   }
 
-  const steps = ['Referente', 'Evento', 'Componenti', 'Dettagli', 'Riepilogo']
+  const steps = ['Operatore', 'Referente', 'Evento', 'Componenti', 'Dettagli', 'Riepilogo']
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
@@ -91,10 +93,28 @@ export default function BriefPage() {
       </div>
 
       <div className="card">
-        {/* Step 0: Referente */}
+        {/* Step 0: Operatore YEG */}
         {step === 0 && (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold mb-4">Dati Referente</h2>
+            <h2 className="text-lg font-semibold mb-1">Operatore YEG</h2>
+            <p className="text-sm text-gray-500 mb-4">Inserisci l&apos;indirizzo email dell&apos;operatore YEG che gestisce questa richiesta. Le comunicazioni ai fornitori verranno inviate da questo indirizzo.</p>
+            <div>
+              <label className="label">Email Operatore YEG *</label>
+              <input
+                type="email"
+                className="input"
+                value={form.email_operatore}
+                onChange={e => set('email_operatore', e.target.value)}
+                placeholder="operatore@yegevents.it"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Step 1: Referente */}
+        {step === 1 && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold mb-4">Dati Referente Cliente</h2>
             <div className="grid grid-cols-2 gap-4">
               <div><label className="label">Nome *</label><input className="input" value={form.nome_referente} onChange={e => set('nome_referente', e.target.value)} /></div>
               <div><label className="label">Cognome *</label><input className="input" value={form.cognome_referente} onChange={e => set('cognome_referente', e.target.value)} /></div>
@@ -107,8 +127,8 @@ export default function BriefPage() {
           </div>
         )}
 
-        {/* Step 1: Evento */}
-        {step === 1 && (
+        {/* Step 2: Evento */}
+        {step === 2 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold mb-4">Dettagli Evento</h2>
             <div><label className="label">Nome Evento *</label><input className="input" value={form.nome_evento} onChange={e => set('nome_evento', e.target.value)} /></div>
@@ -153,8 +173,8 @@ export default function BriefPage() {
           </div>
         )}
 
-        {/* Step 2: Componenti */}
-        {step === 2 && (
+        {/* Step 3: Componenti */}
+        {step === 3 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold mb-4">Componenti Richieste</h2>
             <p className="text-sm text-gray-500 mb-4">Seleziona i servizi necessari per l&apos;evento. Potrai aggiungere dettagli nello step successivo.</p>
@@ -163,7 +183,7 @@ export default function BriefPage() {
               { key: 'hotel_attivo' as const, label: 'Hotel / Alloggio', desc: 'Pernottamento per i partecipanti' },
               { key: 'location_attiva' as const, label: 'Location / Venue', desc: 'Sala meeting, convention, evento' },
               { key: 'catering_attivo' as const, label: 'Catering / F&B', desc: 'Coffee break, pranzi, cene, aperitivi' },
-              { key: 'trasporti_attivi' as const, label: 'Trasporti', desc: 'Transfer, bus, navette, NCC' },
+              { key: 'trasporti_attivi' as const, label: 'Trasporti', desc: 'Transfer aeroporto/stazione, trasferimenti infra-evento' },
               { key: 'entertainment_attivo' as const, label: 'Entertainment / Guest', desc: 'DJ, speaker, show, testimonial' },
               { key: 'teambuilding_attivo' as const, label: 'Team Building', desc: 'Attivita di gruppo, esperienze' },
             ].map(item => (
@@ -199,8 +219,8 @@ export default function BriefPage() {
           </div>
         )}
 
-        {/* Step 3: Dettagli componenti attive */}
-        {step === 3 && (
+        {/* Step 4: Dettagli componenti attive */}
+        {step === 4 && (
           <div className="space-y-6">
             <h2 className="text-lg font-semibold mb-4">Dettagli Componenti</h2>
 
@@ -258,14 +278,69 @@ export default function BriefPage() {
             )}
 
             {form.catering_attivo && (
-              <div className="p-4 bg-orange-50 rounded-lg space-y-3">
+              <div className="p-4 bg-orange-50 rounded-lg space-y-4">
                 <h3 className="font-semibold text-orange-900">Catering / F&B</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div><label className="label">Coffee Break</label><input type="number" className="input" min="0" value={form.coffee_break_num} onChange={e => set('coffee_break_num', parseInt(e.target.value) || 0)} placeholder="N. servizi" /></div>
-                  <div><label className="label">Pranzi</label><input type="number" className="input" min="0" value={form.pranzo_num} onChange={e => set('pranzo_num', parseInt(e.target.value) || 0)} /></div>
-                  <div><label className="label">Cene</label><input type="number" className="input" min="0" value={form.cena_num} onChange={e => set('cena_num', parseInt(e.target.value) || 0)} /></div>
-                  <div><label className="label">Aperitivi</label><input type="number" className="input" min="0" value={form.aperitivo_num} onChange={e => set('aperitivo_num', parseInt(e.target.value) || 0)} /></div>
+
+                {/* Coffee Break + Coffee Station */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Coffee Break (n. servizi)</label>
+                    <input type="number" className="input" min="0" value={form.coffee_break_num} onChange={e => set('coffee_break_num', parseInt(e.target.value) || 0)} />
+                  </div>
+                  <div className="flex items-end pb-1">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="checkbox" checked={form.coffee_station} onChange={e => set('coffee_station', e.target.checked)} className="rounded w-4 h-4" />
+                      <div>
+                        <div className="font-medium text-gray-900">Coffee Station</div>
+                        <div className="text-xs text-gray-500">Postazione caffè sempre disponibile</div>
+                      </div>
+                    </label>
+                  </div>
                 </div>
+
+                {/* Pranzi con interno/esterno */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="label">Pranzi (n. servizi)</label>
+                      <input type="number" className="input" min="0" value={form.pranzo_num} onChange={e => set('pranzo_num', parseInt(e.target.value) || 0)} />
+                    </div>
+                    {form.pranzo_num > 0 && (
+                      <div className="flex-1">
+                        <label className="label">Modalita pranzo</label>
+                        <select className="input" value={form.pranzo_interno ? 'interno' : 'esterno'} onChange={e => set('pranzo_interno', e.target.value === 'interno')}>
+                          <option value="interno">In hotel/venue (interno)</option>
+                          <option value="esterno">Ristorante esterno</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Cene con interno/esterno */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="label">Cene (n. servizi)</label>
+                      <input type="number" className="input" min="0" value={form.cena_num} onChange={e => set('cena_num', parseInt(e.target.value) || 0)} />
+                    </div>
+                    {form.cena_num > 0 && (
+                      <div className="flex-1">
+                        <label className="label">Modalita cena</label>
+                        <select className="input" value={form.cena_interna ? 'interna' : 'esterna'} onChange={e => set('cena_interna', e.target.value === 'interna')}>
+                          <option value="interna">In hotel/venue (interna)</option>
+                          <option value="esterna">Ristorante esterno</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label">Aperitivi (n. servizi)</label>
+                  <input type="number" className="input" min="0" value={form.aperitivo_num} onChange={e => set('aperitivo_num', parseInt(e.target.value) || 0)} />
+                </div>
+
                 <div><label className="label">Esigenze alimentari</label><input className="input" value={form.esigenze_alimentari} onChange={e => set('esigenze_alimentari', e.target.value)} placeholder="Vegetariano, vegano, halal, allergie..." /></div>
                 <div><label className="label">Note catering</label><input className="input" value={form.catering_note} onChange={e => set('catering_note', e.target.value)} /></div>
               </div>
@@ -275,17 +350,17 @@ export default function BriefPage() {
               <div className="p-4 bg-green-50 rounded-lg space-y-3">
                 <h3 className="font-semibold text-green-900">Trasporti</h3>
                 <div>
-                  <label className="label">Tipo trasporti</label>
+                  <label className="label">Tipo trasporti richiesti</label>
                   <div className="flex flex-wrap gap-2 mt-1">
                     {TRASPORTI_TIPO.map(t => (
                       <button key={t} type="button" onClick={() => toggleArray('trasporti_tipo', t)}
-                        className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                        className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
                           form.trasporti_tipo.includes(t) ? 'bg-green-500 text-white border-green-500' : 'border-gray-300 hover:border-green-300'
                         }`}>{t}</button>
                     ))}
                   </div>
                 </div>
-                <div><label className="label">Note trasporti</label><input className="input" value={form.trasporti_note} onChange={e => set('trasporti_note', e.target.value)} placeholder="Tratte, orari, esigenze..." /></div>
+                <div><label className="label">Note trasporti</label><input className="input" value={form.trasporti_note} onChange={e => set('trasporti_note', e.target.value)} placeholder="Tratte, orari, esigenze specifiche..." /></div>
               </div>
             )}
 
@@ -322,10 +397,16 @@ export default function BriefPage() {
           </div>
         )}
 
-        {/* Step 4: Riepilogo */}
-        {step === 4 && (
+        {/* Step 5: Riepilogo */}
+        {step === 5 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold mb-4">Riepilogo Brief</h2>
+
+            {form.email_operatore && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                <span className="text-blue-700 font-medium">Operatore YEG:</span> {form.email_operatore}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="space-y-2">
@@ -351,8 +432,18 @@ export default function BriefPage() {
               <div className="flex flex-wrap gap-2">
                 {form.hotel_attivo && <span className="badge bg-blue-100 text-blue-800">Hotel ({form.camere_singole + form.camere_doppie} camere)</span>}
                 {form.location_attiva && <span className="badge bg-purple-100 text-purple-800">Location ({form.location_setup})</span>}
-                {form.catering_attivo && <span className="badge bg-orange-100 text-orange-800">Catering ({form.coffee_break_num + form.pranzo_num + form.cena_num + form.aperitivo_num} servizi)</span>}
-                {form.trasporti_attivi && <span className="badge bg-green-100 text-green-800">Trasporti</span>}
+                {form.catering_attivo && (
+                  <span className="badge bg-orange-100 text-orange-800">
+                    Catering ({[
+                      form.coffee_break_num > 0 && `${form.coffee_break_num} CB`,
+                      form.coffee_station && 'Coffee Station',
+                      form.pranzo_num > 0 && `${form.pranzo_num} pranzi (${form.pranzo_interno ? 'interno' : 'esterno'})`,
+                      form.cena_num > 0 && `${form.cena_num} cene (${form.cena_interna ? 'interna' : 'esterna'})`,
+                      form.aperitivo_num > 0 && `${form.aperitivo_num} aperitivi`,
+                    ].filter(Boolean).join(', ')})
+                  </span>
+                )}
+                {form.trasporti_attivi && <span className="badge bg-green-100 text-green-800">Trasporti ({form.trasporti_tipo.join(', ') || 'da definire'})</span>}
                 {form.entertainment_attivo && <span className="badge bg-pink-100 text-pink-800">Entertainment</span>}
                 {form.teambuilding_attivo && <span className="badge bg-teal-100 text-teal-800">Team Building</span>}
                 {form.segreteria && <span className="badge bg-gray-100 text-gray-800">Segreteria</span>}
