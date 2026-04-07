@@ -37,7 +37,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       const { proposta_id, ...rest } = body
       const allowed = ['nome','descrizione','motivo_match','pro','contro','punti_forza',
         'prezzo_stimato','costo_reale','capacita','indirizzo','contatto','sito_web','note',
-        'da_verificare','markup_percentuale','iva_percentuale']
+        'da_verificare','markup_percentuale','iva_percentuale','immagine_url','immagini']
       const updates: Record<string, unknown> = {}
       for (const k of allowed) {
         if (rest[k] !== undefined) updates[k] = rest[k]

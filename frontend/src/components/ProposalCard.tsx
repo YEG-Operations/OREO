@@ -199,8 +199,48 @@ export default function ProposalCard({
   const contro = proposta.contro || []
   const hasEmail = !!proposta.contatto?.match(/[\w.+-]+@[\w.-]+\.\w+/)
 
+  // Immagini per hotel e location
+  const isStrutturaCategory = proposta.categoria === 'hotel' || proposta.categoria === 'location'
+  const immagini = (proposta.immagini && proposta.immagini.length > 0)
+    ? proposta.immagini
+    : isStrutturaCategory && proposta.immagine_url
+      ? [proposta.immagine_url]
+      : []
+  const [imgIndex, setImgIndex] = useState(0)
+
   return (
     <div className={`card-hover relative transition-all ${editing ? 'ring-2 ring-blue-400' : ''} ${isSelected ? 'ring-2 ring-yeg-500 bg-yeg-50/30' : ''}`}>
+
+      {/* Galleria immagini per hotel e location */}
+      {isStrutturaCategory && immagini.length > 0 && !editing && (
+        <div className="relative mb-3 -mx-4 -mt-4 rounded-t-xl overflow-hidden h-48 bg-gray-100">
+          <img
+            src={immagini[imgIndex]}
+            alt={`${proposta.nome} - foto ${imgIndex + 1}`}
+            className="w-full h-full object-cover"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+          />
+          {immagini.length > 1 && (
+            <>
+              <button
+                onClick={() => setImgIndex((imgIndex - 1 + immagini.length) % immagini.length)}
+                className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center shadow hover:bg-white text-gray-700"
+              >‹</button>
+              <button
+                onClick={() => setImgIndex((imgIndex + 1) % immagini.length)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center shadow hover:bg-white text-gray-700"
+              >›</button>
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                {immagini.map((_, i) => (
+                  <button key={i} onClick={() => setImgIndex(i)}
+                    className={`w-2 h-2 rounded-full transition-colors ${i === imgIndex ? 'bg-white' : 'bg-white/50'}`}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Badge fonte + budget + da_verificare */}
       <div className="flex items-start justify-between mb-3">

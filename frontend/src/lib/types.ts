@@ -171,6 +171,7 @@ export interface Proposta {
   sito_web: string | null
   contatto: string | null
   immagine_url: string | null
+  immagini: string[]           // Array di URL immagini (per hotel/location)
   fonte: FonteProposta
   fornitore_id: number | null
   is_yeg_supplier: boolean

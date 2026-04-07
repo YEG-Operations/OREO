@@ -27,23 +27,39 @@ export default function PropostaClientePage() {
   useEffect(() => { load() }, [load])
 
   const toggleSelect = async (propostaId: number, selected: boolean) => {
-    setProposte(prev => prev.map(p =>
-      p.id === propostaId ? { ...p, selezionato_cliente: selected } : p
-    ))
+    if (selected) {
+      // Deselect others in same category, select only this one
+      const target = proposte.find(p => p.id === propostaId)
+      setProposte(prev => prev.map(p =>
+        p.id === propostaId ? { ...p, selezionato_cliente: true } :
+        p.categoria === target?.categoria ? { ...p, selezionato_cliente: false } : p
+      ))
+    } else {
+      setProposte(prev => prev.map(p =>
+        p.id === propostaId ? { ...p, selezionato_cliente: false } : p
+      ))
+    }
   }
 
   const conferma = async () => {
-    const selezionate = proposte.filter(p => p.selezionato_cliente)
-    if (selezionate.length === 0) {
-      alert('Seleziona almeno una proposta per categoria.')
+    const currentCategorie = [...new Set(proposte.map(p => p.categoria))] as CategoriaServizio[]
+    // Verifica che ogni categoria abbia esattamente 1 selezione
+    const categorieWithSelection = currentCategorie.filter(cat => {
+      const props = proposte.filter(p => p.categoria === cat)
+      const selected = props.filter(p => p.selezionato_cliente)
+      return selected.length === 1
+    })
+    if (categorieWithSelection.length < currentCategorie.length) {
+      alert('Seleziona esattamente una proposta per ogni categoria.')
       return
     }
+    const selezionate = proposte.filter(p => p.selezionato_cliente)
     setSubmitting(true)
     try {
       const res = await fetch(`/api/proposta/${token}/conferma`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ selezioni: selezionate.map(p => p.id) })
+        body: JSON.stringify({ selezioni: selezionate.map((p: Proposta) => p.id) })
       })
       const data = await res.json()
       if (data.success) setConfirmed(true)
@@ -98,7 +114,7 @@ export default function PropostaClientePage() {
           {progetto.citta} · {progetto.data_inizio} / {progetto.data_fine} · {progetto.numero_partecipanti} partecipanti
         </p>
         <p className="text-sm text-gray-500 mt-2">
-          Seleziona la proposta preferita per ogni categoria (puoi selezionarne anche piu di una).
+          Seleziona <strong>una sola proposta preferita</strong> per ogni categoria, poi conferma le tue scelte.
         </p>
       </div>
 
