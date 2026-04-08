@@ -321,6 +321,27 @@ export default function ProjectDetailPage() {
     setProposte(prev => [...prev, ...nuove])
   }
 
+  const deleteAllProposte = async () => {
+    if (!confirm(`Eliminare TUTTE le ${proposte.length} proposte? Questa azione è irreversibile.`)) return
+    if (!confirm('Sicuro? Verranno rimosse tutte le proposte dal progetto e dal database.')) return
+    try {
+      const res = await fetch(`/api/progetti/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ azione: 'delete_all_proposte' })
+      })
+      const data = await res.json()
+      if (data.success) {
+        setProposte([])
+        alert('Tutte le proposte sono state eliminate.')
+      } else {
+        alert('Errore: ' + (data.error || 'errore sconosciuto'))
+      }
+    } catch {
+      alert('Errore di connessione')
+    }
+  }
+
   const rigeneraProposte = async () => {
     if (!confirm('Vuoi rigenerare le proposte AI? Le proposte AI esistenti verranno sostituite.')) return
     setGenerating(true)
@@ -418,6 +439,11 @@ export default function ProjectDetailPage() {
           <button onClick={() => setShowCostSettings(s => !s)} className="btn-ghost text-sm">
             Impostazioni Costi
           </button>
+          {proposte.length > 0 && (
+            <button onClick={deleteAllProposte} className="text-sm bg-red-50 text-red-700 hover:bg-red-100 px-3 py-2 rounded-lg transition-colors font-medium border border-red-200">
+              🗑 Elimina Tutte le Proposte
+            </button>
+          )}
           <button onClick={rigeneraProposte} disabled={generating} className="btn-secondary text-sm">
             {generating ? 'Generazione AI...' : 'Rigenera Proposte AI'}
           </button>

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
 import { searchFornitoriMulti, formatFornitoriPerPrompt, type CategoriaDB } from '@/lib/fornitori-db'
 
+export const maxDuration = 300 // 5 minutes timeout (Vercel Pro)
+
 const QWEN_API_KEY = process.env.QWEN_API_KEY || ''
 const QWEN_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions'
 
@@ -53,8 +55,18 @@ export async function POST(req: NextRequest) {
   const prompt = buildPrompt(brief, componenti, fornitoriText)
 
   // 4. Chiama Qwen
+  console.log(`[genera-proposte] Inizio generazione per progetto ${progetto_id}, componenti: ${componenti.join(', ')}`)
+  console.log(`[genera-proposte] Fornitori DB trovati: ${Object.entries(fornitoriDB).map(([k,v]) => `${k}: ${(v as unknown[]).length}`).join(', ')}`)
+  console.log(`[genera-proposte] QWEN_API_KEY presente: ${!!QWEN_API_KEY}, primi 8 char: ${QWEN_API_KEY?.slice(0,8)}...`)
+  
+  if (!QWEN_API_KEY) {
+    console.error('[genera-proposte] QWEN_API_KEY mancante!')
+    return NextResponse.json({ error: 'QWEN_API_KEY non configurata nelle environment variables' }, { status: 500 })
+  }
+
   let aiResult: Record<string, unknown> | null = null
   try {
+    console.log('[genera-proposte] Chiamata Qwen in corso...')
     const aiResponse = await fetch(QWEN_URL, {
       method: 'POST',
       headers: {
@@ -78,15 +90,29 @@ Rispondi SEMPRE e SOLO con JSON valido, senza markdown, senza backtick, senza co
       }),
     })
 
+    console.log(`[genera-proposte] Qwen response status: ${aiResponse.status}`)
+    
+    if (!aiResponse.ok) {
+      const errText = await aiResponse.text()
+      console.error(`[genera-proposte] Qwen HTTP error ${aiResponse.status}: ${errText.slice(0, 500)}`)
+      await supabase.from('progetti').update({ stato: 'in_lavorazione' }).eq('id', progetto_id)
+      return NextResponse.json({ error: `Qwen API error ${aiResponse.status}: ${errText.slice(0, 200)}` }, { status: 500 })
+    }
+
     const aiData = await aiResponse.json()
+    console.log(`[genera-proposte] Qwen response model: ${aiData.model}, usage: ${JSON.stringify(aiData.usage)}`)
+    
     const content = aiData.choices?.[0]?.message?.content
     if (content) {
       aiResult = typeof content === 'string' ? JSON.parse(content) : content
+      console.log(`[genera-proposte] AI result keys: ${Object.keys(aiResult as Record<string, unknown>).join(', ')}`)
+    } else {
+      console.error('[genera-proposte] Nessun content nella risposta Qwen:', JSON.stringify(aiData).slice(0, 500))
     }
   } catch (e) {
-    console.error('Errore Qwen:', e)
+    console.error('[genera-proposte] Errore Qwen catch:', e)
     await supabase.from('progetti').update({ stato: 'in_lavorazione' }).eq('id', progetto_id)
-    return NextResponse.json({ error: 'Errore generazione AI' }, { status: 500 })
+    return NextResponse.json({ error: `Errore generazione AI: ${e instanceof Error ? e.message : String(e)}` }, { status: 500 })
   }
 
   if (!aiResult) {

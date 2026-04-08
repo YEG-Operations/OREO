@@ -277,20 +277,39 @@ export async function searchFornitori(
   const table = TABLE[categoria]
   if (!table) return []
 
-  let query = sb.from(table).select('*').eq('attivo', true).limit(limit)
+  try {
+    // Prova prima con filtro attivo
+    let query = sb.from(table).select('*').eq('attivo', true).limit(limit)
 
-  if (citta) {
-    // cerca per città con fallback senza filtro
-    const { data: withCity } = await query.ilike('citta', `%${citta}%`)
-    if (withCity && withCity.length >= 3) {
-      return (withCity as Record<string, unknown>[]).map(r => normalize(categoria, r))
+    if (citta) {
+      const { data: withCity, error: errCity } = await query.ilike('citta', `%${citta}%`)
+      if (!errCity && withCity && withCity.length >= 3) {
+        return (withCity as Record<string, unknown>[]).map(r => normalize(categoria, r))
+      }
+      query = sb.from(table).select('*').eq('attivo', true).limit(limit)
     }
-    // nessun match per città → restituisce tutto
-    query = sb.from(table).select('*').eq('attivo', true).limit(limit)
-  }
 
-  const { data } = await query
-  return (data || []).map(r => normalize(categoria, r as Record<string, unknown>))
+    const { data, error } = await query
+    if (!error && data && data.length > 0) {
+      return (data as Record<string, unknown>[]).map(r => normalize(categoria, r))
+    }
+
+    // Fallback: senza filtro attivo (la colonna potrebbe non esistere)
+    console.warn(`[fornitori-db] Fallback senza attivo per ${table}`)
+    let fallbackQuery = sb.from(table).select('*').limit(limit)
+    if (citta) {
+      const { data: withCity } = await fallbackQuery.ilike('citta', `%${citta}%`)
+      if (withCity && withCity.length >= 3) {
+        return (withCity as Record<string, unknown>[]).map(r => normalize(categoria, r))
+      }
+      fallbackQuery = sb.from(table).select('*').limit(limit)
+    }
+    const { data: fallbackData } = await fallbackQuery
+    return (fallbackData || []).map(r => normalize(categoria, r as Record<string, unknown>))
+  } catch (e) {
+    console.error(`[fornitori-db] Errore searchFornitori(${table}):`, e)
+    return []
+  }
 }
 
 /**

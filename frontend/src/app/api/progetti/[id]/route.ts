@@ -51,6 +51,15 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ success: true })
     }
 
+    case 'delete_all_proposte': {
+      const { error: delErr, count } = await supabase
+        .from('proposte')
+        .delete()
+        .eq('progetto_id', params.id)
+      if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
+      return NextResponse.json({ success: true, deleted: count })
+    }
+
     case 'add_proposta': {
       const { data } = await supabase.from('proposte').insert({
         progetto_id: params.id,
