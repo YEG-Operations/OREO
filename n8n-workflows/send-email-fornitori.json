@@ -1,0 +1,66 @@
+{
+  "name": "OREO - Invio Email Fornitori",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-email",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.from }}",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "text": "={{ $json.body }}",
+        "options": {
+          "replyTo": "={{ $json.reply_to }}"
+        }
+      },
+      "id": "send-email",
+      "name": "Invia Email SMTP",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [470, 300],
+      "credentials": {
+        "smtp": {
+          "id": "INSERISCI_CREDENZIALI_SMTP",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message_id: $json.messageId }) }}",
+        "options": {}
+      },
+      "id": "response",
+      "name": "Risposta Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [690, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{ "node": "Invia Email SMTP", "type": "main", "index": 0 }]
+      ]
+    },
+    "Invia Email SMTP": {
+      "main": [
+        [{ "node": "Risposta Webhook", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {},
+  "tags": [{ "name": "oreo" }, { "name": "email" }]
+}

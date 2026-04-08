@@ -209,9 +209,10 @@ ISTRUZIONI:
 1. Per OGNI componente richiesta (${componenti.join(', ')}), genera esattamente 5 proposte.
 2. I fornitori YEG listati sopra devono essere nelle prime posizioni se adatti (is_yeg_supplier:true, fonte:"yeg_db").
 3. Completa con fornitori REALI italiani da siti del settore (meetingecongressi.it, spazieventi.it, hotel chains NH/Hilton/Marriott/Starhotels, ecc.)
-4. Per ogni proposta: pro[] e contro[] specifici e onesti (almeno 2 ciascuno).
-5. Prezzi realistici per il mercato eventi corporate italiano.
-6. Includi sito_web, email e telefono reali quando possibile.
+4. IMPORTANTE: NON inserire lo stesso fornitore/piattaforma più volte nella stessa categoria. Ogni proposta deve essere un fornitore DISTINTO. Se un gruppo alberghiero ha più hotel nella stessa città, scegline solo uno.
+5. Per ogni proposta: pro[] e contro[] specifici e onesti (almeno 2 ciascuno).
+6. Prezzi realistici per il mercato eventi corporate italiano.
+7. Includi sito_web, email e telefono reali quando possibile.
 
 Rispondi SOLO con questo JSON:
 {

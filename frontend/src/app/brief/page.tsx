@@ -72,7 +72,7 @@ export default function BriefPage() {
     }
   }
 
-  const steps = ['Operatore', 'Referente', 'Evento', 'Componenti', 'Dettagli', 'Riepilogo']
+  const steps = ['Referente', 'Evento', 'Componenti', 'Dettagli', 'Riepilogo']
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
@@ -93,26 +93,8 @@ export default function BriefPage() {
       </div>
 
       <div className="card">
-        {/* Step 0: Operatore YEG */}
+        {/* Step 0: Referente */}
         {step === 0 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold mb-1">Operatore YEG</h2>
-            <p className="text-sm text-gray-500 mb-4">Inserisci l&apos;indirizzo email dell&apos;operatore YEG che gestisce questa richiesta. Le comunicazioni ai fornitori verranno inviate da questo indirizzo.</p>
-            <div>
-              <label className="label">Email Operatore YEG *</label>
-              <input
-                type="email"
-                className="input"
-                value={form.email_operatore}
-                onChange={e => set('email_operatore', e.target.value)}
-                placeholder="operatore@yegevents.it"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Step 1: Referente */}
-        {step === 1 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold mb-4">Dati Referente Cliente</h2>
             <div className="grid grid-cols-2 gap-4">
@@ -127,8 +109,8 @@ export default function BriefPage() {
           </div>
         )}
 
-        {/* Step 2: Evento */}
-        {step === 2 && (
+        {/* Step 1: Evento */}
+        {step === 1 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold mb-4">Dettagli Evento</h2>
             <div><label className="label">Nome Evento *</label><input className="input" value={form.nome_evento} onChange={e => set('nome_evento', e.target.value)} /></div>
@@ -173,8 +155,8 @@ export default function BriefPage() {
           </div>
         )}
 
-        {/* Step 3: Componenti */}
-        {step === 3 && (
+        {/* Step 2: Componenti */}
+        {step === 2 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold mb-4">Componenti Richieste</h2>
             <p className="text-sm text-gray-500 mb-4">Seleziona i servizi necessari per l&apos;evento. Potrai aggiungere dettagli nello step successivo.</p>
@@ -219,8 +201,8 @@ export default function BriefPage() {
           </div>
         )}
 
-        {/* Step 4: Dettagli componenti attive */}
-        {step === 4 && (
+        {/* Step 3: Dettagli componenti attive */}
+        {step === 3 && (
           <div className="space-y-6">
             <h2 className="text-lg font-semibold mb-4">Dettagli Componenti</h2>
 
@@ -397,8 +379,8 @@ export default function BriefPage() {
           </div>
         )}
 
-        {/* Step 5: Riepilogo */}
-        {step === 5 && (
+        {/* Step 4: Riepilogo */}
+        {step === 4 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold mb-4">Riepilogo Brief</h2>
 
