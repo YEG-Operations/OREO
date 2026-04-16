@@ -181,6 +181,10 @@ export interface Proposta {
   da_verificare: boolean
   markup_percentuale: number | null  // null = usa il default del progetto
   iva_percentuale: number | null     // null = usa 22% di default
+  // Verifica email contatto (MX / deliverability) — popolato dal backend
+  email_verified?: boolean | null
+  email_verification_error?: string | null
+  email_verified_at?: string | null
 }
 
 // Form brief - campi del form

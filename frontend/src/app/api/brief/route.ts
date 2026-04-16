@@ -1,10 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
+import { assertSameOrigin, backgroundJob, logError } from '@/lib/api-helpers'
 import type { BriefFormData } from '@/lib/types'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: NextRequest) {
+  // Block cross-origin POSTs in production (dev is allowed).
+  const forbidden = assertSameOrigin(req)
+  if (forbidden) return forbidden
+
   const supabase = getServiceClient()
   const form: BriefFormData = await req.json()
+
+  // Basic validation — required fields before we even touch the DB.
+  if (!form?.email || !form?.nome_evento || !form?.citta || !form?.numero_partecipanti) {
+    return NextResponse.json(
+      { error: 'Campi obbligatori mancanti: email, nome_evento, citta, numero_partecipanti' },
+      { status: 400 }
+    )
+  }
 
   // Costruisci componenti richieste
   const componenti: string[] = []
@@ -38,13 +53,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Genera proposte AI in background (fire & forget)
+  // Genera proposte AI in background — wrapped in backgroundJob so Vercel
+  // keeps the serverless function alive until the fetch completes.
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-  fetch(`${baseUrl}/api/genera-proposte`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ progetto_id: progetto.id }),
-  }).catch(err => console.error('Errore avvio generazione proposte:', err))
+  backgroundJob(async () => {
+    try {
+      await fetch(`${baseUrl}/api/genera-proposte`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ progetto_id: progetto.id }),
+      })
+    } catch (err) {
+      logError('brief:genera-proposte', err)
+    }
+  })
 
   // Log
   await supabase.from('storico').insert({

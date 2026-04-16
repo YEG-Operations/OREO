@@ -466,6 +466,22 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
+      {/* Banner: proposte AI con contatti da verificare */}
+      {proposte.filter(p => p.da_verificare).length > 0 && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-3">
+          <span className="text-amber-600 text-lg" aria-hidden>⚠</span>
+          <p className="text-sm text-amber-900">
+            <span className="font-semibold">
+              {proposte.filter(p => p.da_verificare).length}
+            </span>{' '}
+            {proposte.filter(p => p.da_verificare).length === 1
+              ? 'proposta con contatti'
+              : 'proposte con contatti'}{' '}
+            da verificare prima dell&apos;invio email
+          </p>
+        </div>
+      )}
+
       {/* Pannello impostazioni costi (collassabile) */}
       {showCostSettings && progetto && (
         <CostSettingsPanel

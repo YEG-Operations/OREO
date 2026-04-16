@@ -49,6 +49,9 @@ const TABLE: Record<CategoriaDB, string> = {
 function normalize(categoria: CategoriaDB, row: Record<string, unknown>): FornitoreNormalizzato {
   const s = (v: unknown) => (v && String(v).trim() !== '' && String(v) !== '-' ? String(v) : null)
   const n = (v: unknown) => (v != null && !isNaN(Number(v)) ? Number(v) : null)
+  // Flag YEG: letto da qualunque categoria. Se la colonna non esiste,
+  // row.is_yeg_supplier è undefined e `=== true` restituisce false in modo sicuro.
+  const yeg = row.is_yeg_supplier === true
 
   switch (categoria) {
     case 'hotel':
@@ -62,7 +65,7 @@ function normalize(categoria: CategoriaDB, row: Record<string, unknown>): Fornit
         contatto_tel: s(row.telefono),
         sito_web: s(row.sito_web),
         note: s(row.note) ?? s(row.punti_di_forza),
-        is_yeg_supplier: false,
+        is_yeg_supplier: yeg,
         dettagli: {
           stelle: row.stelle,
           num_camere: row.num_camere,
@@ -91,7 +94,7 @@ function normalize(categoria: CategoriaDB, row: Record<string, unknown>): Fornit
         contatto_tel: s(row.contatto_tel),
         sito_web: s(row.sito_web),
         note: s(row.note) ?? s(row.punti_di_forza),
-        is_yeg_supplier: false,
+        is_yeg_supplier: yeg,
         dettagli: {
           tipologia: row.tipologia,
           capienza_max: row.capienza_max,
@@ -117,7 +120,7 @@ function normalize(categoria: CategoriaDB, row: Record<string, unknown>): Fornit
         contatto_tel: s(row.telefono),
         sito_web: s(row.sito_web),
         note: s(row.note),
-        is_yeg_supplier: row.is_yeg_supplier === true,
+        is_yeg_supplier: yeg,
         dettagli: {
           tipo_cucina: row.tipo_cucina,
           adatto_a: row.adatto_a,
@@ -140,7 +143,7 @@ function normalize(categoria: CategoriaDB, row: Record<string, unknown>): Fornit
         contatto_tel: s(row.contatto_tel),
         sito_web: s(row.sito_web),
         note: s(row.note),
-        is_yeg_supplier: false,
+        is_yeg_supplier: yeg,
         dettagli: {
           paese_regione: row.paese_regione,
           tipologia_servizi: row.tipologia_servizi,
@@ -161,7 +164,7 @@ function normalize(categoria: CategoriaDB, row: Record<string, unknown>): Fornit
         contatto_tel: s(row.contatto_tel),
         sito_web: null,
         note: s(row.note),
-        is_yeg_supplier: false,
+        is_yeg_supplier: yeg,
         dettagli: {
           attivita: row.attivita,
           categoria_attivita: row.categoria_attivita,
@@ -182,7 +185,7 @@ function normalize(categoria: CategoriaDB, row: Record<string, unknown>): Fornit
         contatto_tel: s(row.telefono),
         sito_web: s(row.sito_web),
         note: s(row.note),
-        is_yeg_supplier: false,
+        is_yeg_supplier: yeg,
         dettagli: {
           tipo: row.tipo,
           capienza_max: row.capienza_max,
@@ -202,7 +205,7 @@ function normalize(categoria: CategoriaDB, row: Record<string, unknown>): Fornit
         contatto_tel: s(row.telefono),
         sito_web: s(row.sito_web),
         note: s(row.note),
-        is_yeg_supplier: false,
+        is_yeg_supplier: yeg,
         dettagli: {
           categoria_servizio: row.categoria_servizio,
           prodotto_servizio: row.prodotto_servizio,
@@ -222,7 +225,7 @@ function normalize(categoria: CategoriaDB, row: Record<string, unknown>): Fornit
         contatto_tel: s(row.contatto_tel),
         sito_web: s(row.sito_web),
         note: s(row.vantaggi_usp) ?? s(row.durata_formato),
-        is_yeg_supplier: false,
+        is_yeg_supplier: yeg,
         dettagli: {
           categoria_artista: row.categoria_artista,
           agenzia: row.agenzia,
@@ -249,7 +252,7 @@ function normalize(categoria: CategoriaDB, row: Record<string, unknown>): Fornit
         contatto_tel: s(row.telefono),
         sito_web: null,
         note: s(row.note) ?? s(row.supplementi),
-        is_yeg_supplier: false,
+        is_yeg_supplier: yeg,
         dettagli: {
           tipo_servizio: row.tipo_servizio,
           aeroporto: row.aeroporto,
@@ -265,8 +268,46 @@ function normalize(categoria: CategoriaDB, row: Record<string, unknown>): Fornit
 }
 
 /**
+ * Esegue una SELECT * con limit, prima provando con `.eq('attivo', true)`.
+ * Se la colonna non esiste (errore) o non ritorna nulla, rilancia senza filtro.
+ * Centralizza il fallback-pattern usato in searchFornitori.
+ */
+async function fetchRows(
+  sb: SupabaseClient,
+  table: string,
+  limit: number,
+  citta?: string | null
+): Promise<Record<string, unknown>[]> {
+  const runQuery = async (withAttivo: boolean) => {
+    let q = sb.from(table).select('*').limit(limit)
+    if (withAttivo) q = q.eq('attivo', true)
+    if (citta) q = q.ilike('citta', `%${citta}%`)
+    return q
+  }
+
+  // Tentativo 1: con filtro attivo
+  const first = await runQuery(true)
+  if (!first.error && first.data && first.data.length > 0) {
+    return first.data as Record<string, unknown>[]
+  }
+
+  // Fallback: senza filtro attivo (la colonna potrebbe non esistere o la tabella è vuota di attivi)
+  if (first.error) {
+    console.warn(`[fornitori-db] Fallback senza 'attivo' per ${table}:`, first.error.message)
+  }
+  const second = await runQuery(false)
+  if (second.error) {
+    console.error(`[fornitori-db] Errore fetchRows(${table}):`, second.error)
+    return []
+  }
+  return (second.data as Record<string, unknown>[]) ?? []
+}
+
+/**
  * Cerca fornitori in una categoria specifica.
- * Filtra per città se disponibile, restituisce max `limit` risultati.
+ * Filtra per città se disponibile: i risultati city-first vengono MERGATI
+ * con quelli senza filtro città (dedup per id) fino a raggiungere `limit`.
+ * Così un ottimo fornitore in Milano viene sempre mantenuto anche se sono solo 1-2.
  */
 export async function searchFornitori(
   sb: SupabaseClient,
@@ -278,34 +319,43 @@ export async function searchFornitori(
   if (!table) return []
 
   try {
-    // Prova prima con filtro attivo
-    let query = sb.from(table).select('*').eq('attivo', true).limit(limit)
-
-    if (citta) {
-      const { data: withCity, error: errCity } = await query.ilike('citta', `%${citta}%`)
-      if (!errCity && withCity && withCity.length >= 3) {
-        return (withCity as Record<string, unknown>[]).map(r => normalize(categoria, r))
-      }
-      query = sb.from(table).select('*').eq('attivo', true).limit(limit)
+    // Caso semplice: niente città → una sola query.
+    if (!citta) {
+      const rows = await fetchRows(sb, table, limit)
+      return rows.map(r => normalize(categoria, r))
     }
 
-    const { data, error } = await query
-    if (!error && data && data.length > 0) {
-      return (data as Record<string, unknown>[]).map(r => normalize(categoria, r))
+    // Step 1: risultati filtrati per città (prioritari).
+    const cityRows = await fetchRows(sb, table, limit, citta)
+    if (cityRows.length === 0) {
+      console.warn(`[fornitori-db] Nessun fornitore trovato in città "${citta}" per ${table}`)
     }
 
-    // Fallback: senza filtro attivo (la colonna potrebbe non esistere)
-    console.warn(`[fornitori-db] Fallback senza attivo per ${table}`)
-    let fallbackQuery = sb.from(table).select('*').limit(limit)
-    if (citta) {
-      const { data: withCity } = await fallbackQuery.ilike('citta', `%${citta}%`)
-      if (withCity && withCity.length >= 3) {
-        return (withCity as Record<string, unknown>[]).map(r => normalize(categoria, r))
-      }
-      fallbackQuery = sb.from(table).select('*').limit(limit)
+    // Se ho già saturato il limite solo con la città, niente da mergiare.
+    if (cityRows.length >= limit) {
+      return cityRows.slice(0, limit).map(r => normalize(categoria, r))
     }
-    const { data: fallbackData } = await fallbackQuery
-    return (fallbackData || []).map(r => normalize(categoria, r as Record<string, unknown>))
+
+    // Step 2: pad con risultati senza filtro città, dedup per id.
+    const allRows = await fetchRows(sb, table, limit)
+    const seen = new Set<unknown>()
+    const merged: Record<string, unknown>[] = []
+
+    for (const r of cityRows) {
+      const id = r.id
+      if (id != null) seen.add(id)
+      merged.push(r)
+      if (merged.length >= limit) break
+    }
+    for (const r of allRows) {
+      if (merged.length >= limit) break
+      const id = r.id
+      if (id != null && seen.has(id)) continue
+      if (id != null) seen.add(id)
+      merged.push(r)
+    }
+
+    return merged.map(r => normalize(categoria, r))
   } catch (e) {
     console.error(`[fornitori-db] Errore searchFornitori(${table}):`, e)
     return []

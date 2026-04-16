@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { Proposta } from '@/lib/types'
+import EmailSendModal from './EmailSendModal'
 
 interface ProposalCardProps {
   proposta: Proposta
@@ -99,9 +100,7 @@ export default function ProposalCard({
 }: ProposalCardProps) {
   const [editing, setEditing] = useState(false)
   const [expanded, setExpanded] = useState(false)
-  const [emailLoading, setEmailLoading] = useState(false)
-  const [showEmail, setShowEmail] = useState(false)
-  const [emailData, setEmailData] = useState<{ to: string; from: string; subject: string; body: string } | null>(null)
+  const [showEmailModal, setShowEmailModal] = useState(false)
 
   const [editData, setEditData] = useState({
     nome: proposta.nome ?? '',
@@ -170,31 +169,6 @@ export default function ProposalCard({
     setEditing(false)
   }
 
-  const handleSendEmail = async () => {
-    setEmailLoading(true)
-    try {
-      const res = await fetch('/api/invia-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ proposta_id: proposta.id, progetto_id: progettoId }),
-      })
-      const data = await res.json()
-      if (data.email) { setEmailData(data.email); setShowEmail(true) }
-    } catch { alert('Errore nella generazione email') }
-    setEmailLoading(false)
-  }
-
-  const openMailto = () => {
-    if (!emailData) return
-    window.open(`mailto:${encodeURIComponent(emailData.to)}?subject=${encodeURIComponent(emailData.subject)}&body=${encodeURIComponent(emailData.body)}`, '_blank')
-  }
-
-  const copyEmail = () => {
-    if (!emailData) return
-    navigator.clipboard.writeText(`A: ${emailData.to}\nOggetto: ${emailData.subject}\n\n${emailData.body}`)
-    alert('Email copiata negli appunti!')
-  }
-
   const pro = proposta.pro?.length > 0 ? proposta.pro : proposta.punti_forza || []
   const contro = proposta.contro || []
   const hasEmail = !!proposta.contatto?.match(/[\w.+-]+@[\w.-]+\.\w+/)
@@ -210,6 +184,16 @@ export default function ProposalCard({
 
   return (
     <div className={`card-hover relative transition-all ${editing ? 'ring-2 ring-blue-400' : ''} ${isSelected ? 'ring-2 ring-yeg-500 bg-yeg-50/30' : ''}`}>
+
+      {/* Banner AI da verificare — solo manager */}
+      {mode === 'manager' && proposta.da_verificare && (
+        <div className="-mx-4 -mt-4 mb-3 px-4 py-2 bg-amber-100 border-b border-amber-200 rounded-t-xl">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
+            <span aria-hidden>⚠</span>
+            Contatti da verificare (AI-generated)
+          </span>
+        </div>
+      )}
 
       {/* Galleria immagini per hotel e location */}
       {isStrutturaCategory && immagini.length > 0 && !editing && (
@@ -487,7 +471,19 @@ export default function ProposalCard({
       ) : (
         <>
           {mode !== 'cliente' && proposta.contatto && (
-            <p className="text-xs text-gray-500 mt-1 truncate" title={proposta.contatto}>{proposta.contatto}</p>
+            <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5 truncate" title={proposta.contatto}>
+              <span className="truncate">{proposta.contatto}</span>
+              {proposta.email_verified === true && (
+                <span className="text-green-600 flex-shrink-0" title="Email verificata via MX" aria-label="Email verificata">✓</span>
+              )}
+              {proposta.email_verified === false && (
+                <span
+                  className="text-red-500 flex-shrink-0"
+                  title={proposta.email_verification_error || 'Email non valida'}
+                  aria-label="Email non valida"
+                >✗</span>
+              )}
+            </p>
           )}
           {mode !== 'cliente' && proposta.note && (
             <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-2">{proposta.note}</p>
@@ -502,21 +498,27 @@ export default function ProposalCard({
             <div className="flex gap-2 flex-wrap">
               {editing ? (
                 <>
-                  <button onClick={handleSave} className="text-xs btn-primary py-1 px-3">Salva</button>
-                  <button onClick={handleCancel} className="text-xs btn-ghost py-1">Annulla</button>
+                  <button type="button" onClick={handleSave} className="text-xs btn-primary py-1 px-3">Salva</button>
+                  <button type="button" onClick={handleCancel} className="text-xs btn-ghost py-1">Annulla</button>
                 </>
               ) : (
                 <>
-                  <button onClick={() => { setEditing(true); setExpanded(true) }} className="text-xs btn-ghost py-1">Modifica</button>
-                  <button onClick={() => onDelete?.(proposta.id)} className="text-xs text-red-500 hover:text-red-700 py-1 px-2">Rimuovi</button>
-                  <button onClick={handleSendEmail} disabled={emailLoading}
-                    className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 py-1 px-3 rounded-lg transition-colors font-medium">
-                    {emailLoading ? 'Genero...' : 'Contatta'}
+                  <button type="button" onClick={() => { setEditing(true); setExpanded(true) }} className="text-xs btn-ghost py-1">Modifica</button>
+                  <button type="button" onClick={() => onDelete?.(proposta.id)} className="text-xs text-red-500 hover:text-red-700 py-1 px-2">Rimuovi</button>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmailModal(true)}
+                    disabled={!hasEmail}
+                    title={hasEmail ? 'Componi e invia email al fornitore' : 'Nessuna email nei contatti'}
+                    className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed py-1 px-3 rounded-lg transition-colors font-medium"
+                  >
+                    Contatta
                   </button>
                 </>
               )}
             </div>
             <button
+              type="button"
               onClick={() => onToggleSelect(proposta.id, !isSelected)}
               className={`text-sm font-medium px-4 py-1.5 rounded-lg transition-colors ${isSelected ? 'bg-yeg-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
             >
@@ -525,6 +527,7 @@ export default function ProposalCard({
           </>
         ) : (
           <button
+            type="button"
             onClick={() => onToggleSelect(proposta.id, !isSelected)}
             className={`w-full text-sm font-medium py-2.5 rounded-lg transition-colors ${isSelected ? 'bg-yeg-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
           >
@@ -533,41 +536,13 @@ export default function ProposalCard({
         )}
       </div>
 
-      {/* Email Modal */}
-      {showEmail && emailData && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowEmail(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Email per {proposta.nome}</h3>
-              <button onClick={() => setShowEmail(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
-            </div>
-            <div className="p-6 overflow-y-auto max-h-[50vh]">
-              {emailData.from && (
-                <div className="mb-3">
-                  <label className="text-xs font-medium text-gray-500 uppercase">Mittente</label>
-                  <p className="text-sm text-gray-900 mt-0.5">{emailData.from}</p>
-                </div>
-              )}
-              <div className="mb-3">
-                <label className="text-xs font-medium text-gray-500 uppercase">Destinatario</label>
-                <p className="text-sm text-gray-900 mt-0.5">{emailData.to || 'Non disponibile — inserisci manualmente'}</p>
-              </div>
-              <div className="mb-3">
-                <label className="text-xs font-medium text-gray-500 uppercase">Oggetto</label>
-                <p className="text-sm text-gray-900 mt-0.5">{emailData.subject}</p>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 uppercase">Corpo</label>
-                <pre className="text-sm text-gray-700 mt-1 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg border">{emailData.body}</pre>
-              </div>
-            </div>
-            <div className="p-6 border-t bg-gray-50 flex gap-3 justify-end">
-              <button onClick={copyEmail} className="btn-secondary text-sm">Copia testo</button>
-              {hasEmail && <button onClick={openMailto} className="btn-primary text-sm">Apri in Mail</button>}
-              <button onClick={() => setShowEmail(false)} className="btn-ghost text-sm">Chiudi</button>
-            </div>
-          </div>
-        </div>
+      {/* Email Modal (nuovo flusso con verifica MX e override) */}
+      {showEmailModal && (
+        <EmailSendModal
+          proposta={proposta}
+          progettoId={progettoId}
+          onClose={() => setShowEmailModal(false)}
+        />
       )}
     </div>
   )

@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
 import { searchFornitoriMulti, formatFornitoriPerPrompt, type CategoriaDB } from '@/lib/fornitori-db'
+import { callQwen, QwenApiError, QwenParseError } from '@/lib/qwen'
+import {
+  GenerateProposalsSchema,
+  normalizeProposal,
+  type GenerateProposalsPayload,
+  type Proposal,
+} from '@/lib/ai-schema'
+import { z } from 'zod'
 
 export const maxDuration = 300 // 5 minutes timeout (Vercel Pro)
-
-const QWEN_API_KEY = process.env.QWEN_API_KEY || ''
-const QWEN_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions'
+export const dynamic = 'force-dynamic'
 
 // Mappa categoria stringa → CategoriaDB per le tabelle specifiche
 const CAT_MAP: Record<string, CategoriaDB> = {
@@ -54,106 +60,165 @@ export async function POST(req: NextRequest) {
   // 3. Costruisci prompt
   const prompt = buildPrompt(brief, componenti, fornitoriText)
 
-  // 4. Chiama Qwen
+  // 4. Chiama Qwen (con retry e validazione)
   console.log(`[genera-proposte] Inizio generazione per progetto ${progetto_id}, componenti: ${componenti.join(', ')}`)
   console.log(`[genera-proposte] Fornitori DB trovati: ${Object.entries(fornitoriDB).map(([k,v]) => `${k}: ${(v as unknown[]).length}`).join(', ')}`)
-  console.log(`[genera-proposte] QWEN_API_KEY presente: ${!!QWEN_API_KEY}, primi 8 char: ${QWEN_API_KEY?.slice(0,8)}...`)
-  
-  if (!QWEN_API_KEY) {
-    console.error('[genera-proposte] QWEN_API_KEY mancante!')
-    return NextResponse.json({ error: 'QWEN_API_KEY non configurata nelle environment variables' }, { status: 500 })
-  }
 
-  let aiResult: Record<string, unknown> | null = null
+  const systemPrompt = `Sei un esperto event planner italiano senior con 15 anni di esperienza nel settore MICE.
+Conosci a fondo fornitori, venue, hotel e servizi per eventi corporate in tutta Italia.
+Rispondi SEMPRE e SOLO con JSON valido, senza markdown, senza backtick, senza commenti.`
+
+  let rawResult: unknown
   try {
     console.log('[genera-proposte] Chiamata Qwen in corso...')
-    const aiResponse = await fetch(QWEN_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${QWEN_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'qwen-plus',
-        messages: [
-          {
-            role: 'system',
-            content: `Sei un esperto event planner italiano senior con 15 anni di esperienza nel settore MICE.
-Conosci a fondo fornitori, venue, hotel e servizi per eventi corporate in tutta Italia.
-Rispondi SEMPRE e SOLO con JSON valido, senza markdown, senza backtick, senza commenti.`,
-          },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 12000,
-        response_format: { type: 'json_object' },
-      }),
+    rawResult = await callQwen<unknown>({
+      system: systemPrompt,
+      user: prompt,
+      maxTokens: 8000,
+      temperature: 0.7,
     })
-
-    console.log(`[genera-proposte] Qwen response status: ${aiResponse.status}`)
-    
-    if (!aiResponse.ok) {
-      const errText = await aiResponse.text()
-      console.error(`[genera-proposte] Qwen HTTP error ${aiResponse.status}: ${errText.slice(0, 500)}`)
-      await supabase.from('progetti').update({ stato: 'in_lavorazione' }).eq('id', progetto_id)
-      return NextResponse.json({ error: `Qwen API error ${aiResponse.status}: ${errText.slice(0, 200)}` }, { status: 500 })
+    console.log(
+      `[genera-proposte] AI raw keys: ${
+        rawResult && typeof rawResult === 'object'
+          ? Object.keys(rawResult as Record<string, unknown>).join(', ')
+          : typeof rawResult
+      }`
+    )
+  } catch (e) {
+    if (e instanceof QwenParseError) {
+      console.error('[genera-proposte] Qwen parse error:', e.message)
+      console.error('[genera-proposte] Raw snippet:', e.rawSnippet.slice(0, 800))
+      return NextResponse.json(
+        { error: `AI response non era JSON valido: ${e.message}` },
+        { status: 502 }
+      )
     }
+    if (e instanceof QwenApiError) {
+      console.error(`[genera-proposte] Qwen API error (status=${e.status}):`, e.message)
+      return NextResponse.json(
+        { error: `Qwen API error: ${e.message}` },
+        { status: 502 }
+      )
+    }
+    console.error('[genera-proposte] Errore Qwen catch:', e)
+    return NextResponse.json(
+      { error: `Errore generazione AI: ${e instanceof Error ? e.message : String(e)}` },
+      { status: 500 }
+    )
+  }
 
-    const aiData = await aiResponse.json()
-    console.log(`[genera-proposte] Qwen response model: ${aiData.model}, usage: ${JSON.stringify(aiData.usage)}`)
-    
-    const content = aiData.choices?.[0]?.message?.content
-    if (content) {
-      aiResult = typeof content === 'string' ? JSON.parse(content) : content
-      console.log(`[genera-proposte] AI result keys: ${Object.keys(aiResult as Record<string, unknown>).join(', ')}`)
+  // 5. Validazione schema
+  let aiResult: GenerateProposalsPayload
+  try {
+    aiResult = GenerateProposalsSchema.parse(rawResult)
+  } catch (e) {
+    const rawSnippet = JSON.stringify(rawResult).slice(0, 1500)
+    if (e instanceof z.ZodError) {
+      console.error('[genera-proposte] Validazione Zod fallita:', JSON.stringify(e.issues).slice(0, 1000))
     } else {
-      console.error('[genera-proposte] Nessun content nella risposta Qwen:', JSON.stringify(aiData).slice(0, 500))
+      console.error('[genera-proposte] Errore validazione:', e)
+    }
+    console.error('[genera-proposte] Raw AI payload (truncated):', rawSnippet)
+
+    // NON eliminiamo proposte esistenti in caso di validation error.
+    return NextResponse.json(
+      {
+        error: 'AI output non conforme allo schema atteso',
+        details: e instanceof z.ZodError ? e.issues : String(e),
+      },
+      { status: 502 }
+    )
+  }
+
+  // 6. Costruisci rows per DB
+  const proposte = buildRows(aiResult, progetto_id)
+  const expectedCount = proposte.length
+
+  if (expectedCount === 0) {
+    console.warn('[genera-proposte] Nessuna proposta valida generata')
+    return NextResponse.json(
+      { error: 'AI non ha prodotto proposte valide' },
+      { status: 502 }
+    )
+  }
+
+  // 7. Elimina vecchie proposte AI/yeg_db e inserisci le nuove.
+  //    Ordine: generate → validate → delete → insert.
+  //    Supabase JS client non supporta transazioni; se l'insert fallisce
+  //    pesantemente, lo flagghiamo nello storico come warning.
+  let deleteFailed = false
+  try {
+    const { error: errDel } = await supabase.from('proposte').delete()
+      .eq('progetto_id', progetto_id)
+      .in('fonte', ['ai', 'yeg_db'])
+    if (errDel) {
+      deleteFailed = true
+      console.error('[genera-proposte] Errore delete proposte vecchie:', errDel.message)
     }
   } catch (e) {
-    console.error('[genera-proposte] Errore Qwen catch:', e)
-    await supabase.from('progetti').update({ stato: 'in_lavorazione' }).eq('id', progetto_id)
-    return NextResponse.json({ error: `Errore generazione AI: ${e instanceof Error ? e.message : String(e)}` }, { status: 500 })
+    deleteFailed = true
+    console.error('[genera-proposte] Exception delete proposte vecchie:', e)
   }
-
-  if (!aiResult) {
-    return NextResponse.json({ error: 'Nessuna risposta dalla AI' }, { status: 500 })
-  }
-
-  // 5. Rimuovi proposte AI precedenti e salva le nuove
-  await supabase.from('proposte').delete()
-    .eq('progetto_id', progetto_id)
-    .in('fonte', ['ai', 'yeg_db'])
-
-  const proposte = parseProposte(aiResult, progetto_id)
 
   let inserted = 0
-  for (let i = 0; i < proposte.length; i += 10) {
-    const batch = proposte.slice(i, i + 10)
-    const { error: errInsert } = await supabase.from('proposte').insert(batch)
-    if (errInsert) {
-      for (const p of batch) {
-        const { error: e2 } = await supabase.from('proposte').insert(p)
-        if (!e2) inserted++
-        else console.error(`SKIP "${p.nome}": ${e2.message}`)
+  try {
+    for (let i = 0; i < proposte.length; i += 10) {
+      const batch = proposte.slice(i, i + 10)
+      const { error: errInsert } = await supabase.from('proposte').insert(batch)
+      if (errInsert) {
+        console.error(`[genera-proposte] Batch insert fallito: ${errInsert.message} — retry singolo`)
+        for (const p of batch) {
+          const { error: e2 } = await supabase.from('proposte').insert(p)
+          if (!e2) inserted++
+          else console.error(`[genera-proposte] SKIP "${p.nome}": ${e2.message}`)
+        }
+      } else {
+        inserted += batch.length
       }
-    } else {
-      inserted += batch.length
     }
+  } catch (e) {
+    console.error('[genera-proposte] Exception durante insert:', e)
   }
 
-  // 6. Aggiorna progetto
-  await supabase.from('progetti').update({
-    stato: 'in_lavorazione',
-    brief_interpretato: (aiResult as Record<string, unknown>).brief_interpretato || null,
-  }).eq('id', progetto_id)
+  const failureRatio = 1 - inserted / expectedCount
+  const majorityFailed = failureRatio > 0.5
 
-  await supabase.from('storico').insert({
+  // 8. Aggiorna progetto
+  try {
+    await supabase.from('progetti').update({
+      stato: 'in_lavorazione',
+      brief_interpretato: aiResult.brief_interpretato ?? null,
+    }).eq('id', progetto_id)
+  } catch (e) {
+    console.error('[genera-proposte] Errore update progetto:', e)
+  }
+
+  // 9. Storico
+  try {
+    if (majorityFailed || deleteFailed) {
+      await supabase.from('storico').insert({
+        progetto_id,
+        azione: `[WARNING] AI generation inconsistente: inserite ${inserted}/${expectedCount} proposte${deleteFailed ? ' (delete pre-existing fallita)' : ''} — stato DB possibilmente inconsistente`,
+        utente: 'sistema',
+      })
+    } else {
+      await supabase.from('storico').insert({
+        progetto_id,
+        azione: `AI ha generato ${inserted} proposte per: ${componenti.join(', ')}`,
+        utente: 'sistema',
+      })
+    }
+  } catch (e) {
+    console.error('[genera-proposte] Errore insert storico:', e)
+  }
+
+  return NextResponse.json({
+    success: true,
     progetto_id,
-    azione: `AI ha generato ${inserted} proposte per: ${componenti.join(', ')}`,
-    utente: 'sistema',
+    totale_proposte: inserted,
+    attese: expectedCount,
+    warning: majorityFailed ? 'maggioranza batch fallita' : undefined,
   })
-
-  return NextResponse.json({ success: true, progetto_id, totale_proposte: inserted })
 }
 
 
@@ -206,13 +271,13 @@ ${fornitoriDB || 'Nessun fornitore YEG nel DB per queste categorie/città'}
 === FINE DB YEG ===
 
 ISTRUZIONI:
-1. Per OGNI componente richiesta (${componenti.join(', ')}), genera esattamente 5 proposte.
-2. I fornitori YEG listati sopra devono essere nelle prime posizioni se adatti (is_yeg_supplier:true, fonte:"yeg_db").
-3. Completa con fornitori REALI italiani da siti del settore (meetingecongressi.it, spazieventi.it, hotel chains NH/Hilton/Marriott/Starhotels, ecc.)
-4. IMPORTANTE: NON inserire lo stesso fornitore/piattaforma più volte nella stessa categoria. Ogni proposta deve essere un fornitore DISTINTO. Se un gruppo alberghiero ha più hotel nella stessa città, scegline solo uno.
-5. Per ogni proposta: pro[] e contro[] specifici e onesti (almeno 2 ciascuno).
-6. Prezzi realistici per il mercato eventi corporate italiano.
-7. Includi sito_web, email e telefono reali quando possibile.
+1. Per OGNI componente richiesta (${componenti.join(', ')}), genera esattamente 4 proposte.
+2. I fornitori YEG listati sopra devono essere nelle prime posizioni se adatti (is_yeg_supplier:true, fonte:"yeg_db"). Preferisci SEMPRE fornitori YEG quando possibile.
+3. Completa con fornitori REALI italiani che conosci (catene note, venue famosi).
+4. IMPORTANTE (anti-allucinazione): NON hai accesso al web. Per i fornitori REALI italiani che conosci, inserisci sito_web e contatto SOLO se sei certo al 100% del dato. Altrimenti OMETTI il campo (usa null). NON inventare MAI email o numeri di telefono. È molto meglio lasciare null che scrivere un dato inventato: l'agenzia invia email reali a questi contatti.
+5. IMPORTANTE: NON inserire lo stesso fornitore/piattaforma più volte nella stessa categoria. Ogni proposta deve essere un fornitore DISTINTO. Se un gruppo alberghiero ha più hotel nella stessa città, scegline solo uno.
+6. Per ogni proposta: pro[] e contro[] specifici e onesti (almeno 2 ciascuno).
+7. Prezzi realistici per il mercato eventi corporate italiano.
 
 Rispondi SOLO con questo JSON:
 {
@@ -238,8 +303,8 @@ Rispondi SOLO con questo JSON:
           "contro": ["limite 1", "limite 2"],
           "adeguatezza_budget": 75,
           "note": "info extra o criticità",
-          "sito_web": "https://...",
-          "contatto": "email e/o telefono",
+          "sito_web": null,
+          "contatto": null,
           "is_yeg_supplier": false,
           "fonte": "ai"
         }
@@ -250,33 +315,39 @@ Rispondi SOLO con questo JSON:
 }
 
 
-function parseProposte(aiResult: Record<string, unknown>, progettoId: string) {
-  const proposte: Record<string, unknown>[] = []
-  const categorie = (aiResult as { categorie?: Record<string, { proposte?: Record<string, unknown>[] }> }).categorie
-  if (!categorie) return proposte
+/**
+ * Build DB rows from validated AI payload, applying normalizeProposal to each.
+ */
+function buildRows(aiResult: GenerateProposalsPayload, progettoId: string) {
+  const rows: Record<string, unknown>[] = []
 
-  for (const [catKey, catData] of Object.entries(categorie)) {
-    const prps = catData.proposte || []
+  for (const [catKey, catData] of Object.entries(aiResult.categorie)) {
+    const prps: Proposal[] = catData.proposte || []
     prps.forEach((p, idx) => {
-      proposte.push({
+      const n = normalizeProposal(p)
+
+      rows.push({
         progetto_id: progettoId,
-        categoria: p.categoria || catKey,
-        nome: p.nome,
-        descrizione: p.descrizione || null,
-        motivo_match: p.motivo_match || null,
-        prezzo_stimato: p.prezzo_stimato || null,
-        capacita: p.capacita || null,
-        indirizzo: p.indirizzo || null,
-        punti_forza: p.pro || p.punti_forza || [],
-        pro: p.pro || [],
-        contro: p.contro || [],
-        adeguatezza_budget: p.adeguatezza_budget || null,
-        note: p.note || null,
-        sito_web: p.sito_web || null,
-        contatto: p.contatto || null,
+        categoria: n.categoria || catKey,
+        nome: n.nome,
+        descrizione: n.descrizione ?? null,
+        motivo_match: n.motivo_match ?? null,
+        prezzo_stimato: n.prezzo_stimato ?? null,
+        capacita: n.capacita ?? null,
+        indirizzo: n.indirizzo ?? null,
+        // TODO: remove punti_forza after UI audit — pro è il campo primario.
+        punti_forza: n.pro,
+        pro: n.pro,
+        contro: n.contro,
+        adeguatezza_budget: n.adeguatezza_budget ?? null,
+        note: n.note ?? null,
+        sito_web: n.sito_web ?? null,
+        contatto: n.contatto ?? null,
         immagine_url: null,
-        fonte: p.fonte || (p.is_yeg_supplier ? 'yeg_db' : 'ai'),
-        is_yeg_supplier: p.is_yeg_supplier || false,
+        fonte: n.fonte || (n.is_yeg_supplier ? 'yeg_db' : 'ai'),
+        is_yeg_supplier: n.is_yeg_supplier,
+        da_verificare: n.da_verificare,
+        email_verified: n.email_verified,
         selezionato_manager: false,
         selezionato_cliente: false,
         ordine: idx,
@@ -284,5 +355,5 @@ function parseProposte(aiResult: Record<string, unknown>, progettoId: string) {
     })
   }
 
-  return proposte
+  return rows
 }

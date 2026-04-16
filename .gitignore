@@ -27,3 +27,10 @@ _archivio/
 # Log
 *.log
 nohup.out
+
+# n8n workflows: contengono secret hardcoded (piano free) — NON pushare
+n8n-workflows/
+# Claude Code: settings locali contengono permessi Bash con credenziali, NON pushare
+.claude/
+# TypeScript build cache
+frontend/tsconfig.tsbuildinfo

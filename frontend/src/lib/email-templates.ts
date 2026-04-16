@@ -14,6 +14,8 @@ interface EmailContext {
   brief: Record<string, unknown>
   // Email operatore YEG che gestisce la richiesta
   email_operatore?: string
+  // Token univoco incluso nel subject/footer per matchare le risposte IMAP
+  thread_token?: string
 }
 
 interface EmailTemplate {
@@ -36,6 +38,13 @@ DETTAGLI EVENTO:
     ? `\nPer rispondere a questa email, scrivete a: ${ctx.email_operatore}`
     : ''
 
+  // Footer discreto con il riferimento della richiesta. Permette al sistema
+  // di matchare la risposta anche se il subject viene alterato dal client
+  // di posta del fornitore.
+  const refFooter = ctx.thread_token
+    ? `\n\n--\nRif. richiesta: ${ctx.thread_token}\n`
+    : ''
+
   const closing = `
 
 Sareste disponibili nelle date indicate? Potreste inviarci un preventivo dettagliato?
@@ -43,10 +52,13 @@ Sareste disponibili nelle date indicate? Potreste inviarci un preventivo dettagl
 Restiamo a disposizione per qualsiasi chiarimento.${operatoreInfo}
 
 Cordiali saluti,
-YEG Events${ctx.email_operatore ? `\n${ctx.email_operatore}` : ''}`
+YEG Events${ctx.email_operatore ? `\n${ctx.email_operatore}` : ''}${refFooter}`
+
+  const baseSubject = getSubject(ctx)
+  const subject = ctx.thread_token ? `[REF: ${ctx.thread_token}] ${baseSubject}` : baseSubject
 
   return {
-    subject: getSubject(ctx),
+    subject,
     body: base + specific + closing,
   }
 }

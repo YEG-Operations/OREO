@@ -11,6 +11,7 @@ export async function GET() {
     .from('progetti')
     .select('id, stato, nome_evento, tipologia_evento, nome_referente, email_referente, azienda, citta, data_inizio, data_fine, numero_partecipanti, budget_totale, componenti_richieste, created_at, updated_at')
     .order('created_at', { ascending: false })
+    .limit(500)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

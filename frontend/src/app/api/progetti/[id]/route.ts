@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
+import { assertSameOrigin } from '@/lib/api-helpers'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +23,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
 // PUT /api/progetti/:id - azioni sul progetto
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+  // Internal manager-only endpoint: enforce same-origin in production.
+  const forbidden = assertSameOrigin(req)
+  if (forbidden) return forbidden
+
   const supabase = getServiceClient()
   const body = await req.json()
   const { azione } = body
@@ -42,6 +47,16 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       for (const k of allowed) {
         if (rest[k] !== undefined) updates[k] = rest[k]
       }
+
+      // Manager editing contact info implicitly verifies it: if `contatto` or
+      // `sito_web` is present in the payload and `da_verificare` was NOT
+      // explicitly provided, force da_verificare = false.
+      const touchesContact = rest.contatto !== undefined || rest.sito_web !== undefined
+      const explicitVerify = Object.prototype.hasOwnProperty.call(rest, 'da_verificare')
+      if (touchesContact && !explicitVerify) {
+        updates.da_verificare = false
+      }
+
       await supabase.from('proposte').update(updates).eq('id', proposta_id)
       return NextResponse.json({ success: true })
     }
