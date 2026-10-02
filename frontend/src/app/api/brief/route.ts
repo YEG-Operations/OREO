@@ -10,8 +10,32 @@ export async function POST(req: NextRequest) {
   const forbidden = assertSameOrigin(req)
   if (forbidden) return forbidden
 
+  try {
+    return await creaProgetto(req)
+  } catch (err) {
+    // Qualsiasi errore inatteso (env Supabase mancanti, JSON malformato, ...):
+    // meglio un messaggio leggibile che un 500 opaco su cui non si può indagare.
+    logError('brief:unhandled', err)
+    return NextResponse.json(
+      { error: `Errore inatteso nella creazione del progetto: ${errMessage(err)}` },
+      { status: 500 }
+    )
+  }
+}
+
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+async function creaProgetto(req: NextRequest) {
   const supabase = getServiceClient()
-  const form: BriefFormData = await req.json()
+
+  let form: BriefFormData
+  try {
+    form = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Corpo della richiesta non valido (JSON)' }, { status: 400 })
+  }
 
   // Basic validation — required fields before we even touch the DB.
   if (!form?.email || !form?.nome_evento || !form?.citta || !form?.numero_partecipanti) {
@@ -31,7 +55,7 @@ export async function POST(req: NextRequest) {
   if (form.teambuilding_attivo) componenti.push('teambuilding')
 
   // Crea progetto in Supabase
-  const { data: progetto, error } = await supabase.from('progetti').insert({
+  const { data: progetto, error, status } = await supabase.from('progetti').insert({
     brief_raw: form,
     nome_evento: form.nome_evento,
     tipologia_evento: form.tipologia_evento,
@@ -50,12 +74,31 @@ export async function POST(req: NextRequest) {
   }).select().single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    // Log completo (details/hint/code contengono la causa reale: ENOTFOUND,
+    // ECONNREFUSED, certificato, ecc.), altrimenti il motivo resta invisibile.
+    logError('brief:insert-progetto', error)
+
+    // status 0 = la fetch verso Supabase non è nemmeno arrivata al server
+    // (DNS, rete, progetto in pausa, URL errato): è infrastruttura, non il brief.
+    const nonRaggiungibile = status === 0 || /fetch failed/i.test(error.message)
+    return NextResponse.json(
+      {
+        error: nonRaggiungibile
+          ? 'Database non raggiungibile: il brief non è stato salvato. Verifica che il progetto Supabase sia attivo e che NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_KEY siano configurate correttamente.'
+          : `Salvataggio non riuscito: ${error.message}`,
+        dettaglio: error.code || undefined,
+      },
+      { status: nonRaggiungibile ? 503 : 500 }
+    )
   }
 
   // Genera proposte AI in background — wrapped in backgroundJob so Vercel
   // keeps the serverless function alive until the fetch completes.
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  // Senza NEXT_PUBLIC_APP_URL su Vercel la fetch finiva su localhost:3000 e
+  // moriva con "TypeError: fetch failed": le proposte non venivano mai generate.
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
   backgroundJob(async () => {
     try {
       await fetch(`${baseUrl}/api/genera-proposte`, {
@@ -69,11 +112,14 @@ export async function POST(req: NextRequest) {
   })
 
   // Log
-  await supabase.from('storico').insert({
+  // Il progetto è già salvato: se il log fallisce lo segnaliamo nei log del
+  // server, ma non trasformiamo un brief andato a buon fine in un errore.
+  const { error: storicoError } = await supabase.from('storico').insert({
     progetto_id: progetto.id,
     azione: 'Brief ricevuto e progetto creato',
     utente: 'sistema',
   })
+  if (storicoError) logError('brief:insert-storico', storicoError)
 
   return NextResponse.json({ success: true, progetto_id: progetto.id })
 }
