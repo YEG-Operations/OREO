@@ -253,6 +253,17 @@ function buildPrompt(
     dettagli += `\nTEAM BUILDING: ${brief.teambuilding_note || 'da definire'}`
   }
 
+  // Se il brief è stato caricato come documento, passiamo anche il testo
+  // originale: contiene sfumature (tono, obiettivi, vincoli) che i campi
+  // strutturati non catturano.
+  const documento = typeof brief.documento_testo === 'string' ? brief.documento_testo.trim() : ''
+  const briefOriginale = documento
+    ? `\n=== BRIEF ORIGINALE DEL CLIENTE (documento: ${brief.documento_nome || 'allegato'}) ===
+${documento.slice(0, 6000)}
+=== FINE BRIEF ORIGINALE ===
+`
+    : ''
+
   return `Analizza questo brief evento e genera proposte CONCRETE con fornitori REALI italiani.
 
 === BRIEF ===
@@ -265,7 +276,7 @@ Budget totale: ${brief.budget_totale || 'da definire'} EUR
 Agenda: ${brief.agenda || 'non specificata'}
 ${dettagli}
 === FINE BRIEF ===
-
+${briefOriginale}
 === FORNITORI DATABASE YEG (PRIORITÀ - inserisci questi se pertinenti) ===
 ${fornitoriDB || 'Nessun fornitore YEG nel DB per queste categorie/città'}
 === FINE DB YEG ===
