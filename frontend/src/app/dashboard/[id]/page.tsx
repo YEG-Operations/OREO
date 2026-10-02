@@ -7,6 +7,11 @@ import { STATI_LABELS, STATI_COLORS, CATEGORIE_LABELS, MARKUP_STANDARD } from '@
 import BriefSummary from '@/components/BriefSummary'
 import CategorySection from '@/components/CategorySection'
 
+// Quanto aspettare le proposte prima di dichiarare la generazione fallita.
+// genera-proposte dichiara maxDuration = 300s: oltre questa soglia non sta
+// più lavorando, è morta.
+const ATTESA_GENERAZIONE_MS = 5 * 60 * 1000
+
 // Modal per aggiunta proposta manuale con ricerca AI opzionale
 function AddPropostaModal({
   categoria,
@@ -261,6 +266,8 @@ export default function ProjectDetailPage() {
   const [tab, setTab] = useState<'proposte' | 'brief' | 'costi'>('proposte')
   const [showCostSettings, setShowCostSettings] = useState(false)
   const [addModal, setAddModal] = useState<CategoriaServizio | null>(null)
+  const [generazioneBloccata, setGenerazioneBloccata] = useState(false)
+  const [generazioneErrore, setGenerazioneErrore] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -274,12 +281,25 @@ export default function ProjectDetailPage() {
 
   useEffect(() => { load() }, [load])
 
-  // Auto-poll se il progetto è "nuovo" (AI sta generando)
+  // Auto-poll se il progetto è "nuovo" (AI sta generando).
+  // Il progetto passa a "in_lavorazione" solo quando genera-proposte arriva in
+  // fondo: se la generazione non parte o muore a metà, lo stato resta "nuovo"
+  // per sempre. Prima il polling girava a vuoto senza limite e l'operatore
+  // vedeva lo spinner "AI sta generando..." all'infinito. Ora si arrende e lo
+  // dice, offrendo il lancio manuale.
   useEffect(() => {
-    if (progetto?.stato !== 'nuovo') return
-    const interval = setInterval(() => { load() }, 15000)
+    if (progetto?.stato !== 'nuovo' || proposte.length > 0) return
+    const scadenza = Date.now() + ATTESA_GENERAZIONE_MS
+    const interval = setInterval(() => {
+      if (Date.now() > scadenza) {
+        clearInterval(interval)
+        setGenerazioneBloccata(true)
+        return
+      }
+      load()
+    }, 15000)
     return () => clearInterval(interval)
-  }, [progetto?.stato, load])
+  }, [progetto?.stato, proposte.length, load])
 
   const toggleSelect = async (propostaId: number, selected: boolean) => {
     setProposte(prev => prev.map(p =>
@@ -345,12 +365,7 @@ export default function ProjectDetailPage() {
   const rigeneraProposte = async () => {
     if (!confirm('Vuoi rigenerare le proposte AI? Le proposte AI esistenti verranno sostituite.')) return
     setGenerating(true)
-
-    fetch('/api/genera-proposte', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ progetto_id: id }),
-    }).catch(() => {})
+    setGenerazioneBloccata(false)
 
     const poll = setInterval(async () => {
       try {
@@ -368,11 +383,40 @@ export default function ProjectDetailPage() {
       } catch { /* ignore */ }
     }, 10000)
 
-    setTimeout(() => {
+    const rinuncia = setTimeout(() => {
       clearInterval(poll)
       setGenerating(false)
+      setGenerazioneBloccata(true)
       load()
-    }, 300000)
+    }, ATTESA_GENERAZIONE_MS)
+
+    const ferma = (errore: string) => {
+      clearInterval(poll)
+      clearTimeout(rinuncia)
+      setGenerating(false)
+      setGenerazioneErrore(errore)
+      if (errore) setGenerazioneBloccata(true)
+      load()
+    }
+
+    // L'esito della chiamata non va ignorato: prima era `.catch(() => {})` e un
+    // errore della route (AI non raggiungibile, progetto inesistente, timeout)
+    // diventava un'attesa muta di 5 minuti. Ora il motivo si vede subito.
+    try {
+      const res = await fetch('/api/genera-proposte', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ progetto_id: id }),
+      })
+      if (res.ok) {
+        ferma('')
+      } else {
+        const data = await res.json().catch(() => ({}))
+        ferma(data.error || `La generazione ha risposto ${res.status}`)
+      }
+    } catch {
+      ferma('Errore di connessione verso il server')
+    }
   }
 
   const inviaAlCliente = async () => {
@@ -590,7 +634,7 @@ export default function ProjectDetailPage() {
         <div>
           {categorie.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
-              {progetto.stato === 'nuovo' || generating ? (
+              {(progetto.stato === 'nuovo' && !generazioneBloccata) || generating ? (
                 <>
                   <div className="animate-pulse mb-4">
                     <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto">
@@ -603,6 +647,29 @@ export default function ProjectDetailPage() {
                   <p className="mb-1 text-gray-600 font-medium">AI sta generando le proposte...</p>
                   <p className="text-sm mb-4">Qwen sta analizzando il brief e cercando fornitori. Ci vogliono 2-3 minuti.</p>
                   <button onClick={load} className="btn-secondary text-sm">Ricarica</button>
+                </>
+              ) : generazioneBloccata ? (
+                <>
+                  <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                    </svg>
+                  </div>
+                  <p className="mb-1 text-gray-700 font-medium">La generazione delle proposte non è andata a buon fine.</p>
+                  {generazioneErrore ? (
+                    <p className="text-sm mb-4 max-w-md mx-auto">
+                      Il brief è salvato. Il server ha risposto:{' '}
+                      <span className="font-medium text-amber-800">{generazioneErrore}</span>
+                    </p>
+                  ) : (
+                    <p className="text-sm mb-4 max-w-md mx-auto">
+                      Il brief è salvato, ma dopo 5 minuti non è arrivata nessuna proposta:
+                      la chiamata all&apos;AI non è stata avviata o si è interrotta.
+                      Puoi lanciarla a mano qui sotto; se non funziona nemmeno così,
+                      il motivo è nei log del server.
+                    </p>
+                  )}
+                  <button onClick={rigeneraProposte} className="btn-primary text-sm">Genera Proposte AI</button>
                 </>
               ) : (
                 <>

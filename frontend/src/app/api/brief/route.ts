@@ -4,6 +4,9 @@ import { assertSameOrigin, backgroundJob, logError } from '@/lib/api-helpers'
 import type { BriefFormData } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
+// Il default di Vercel (10s) uccideva l'invocazione mentre il job in background
+// stava ancora avviando la generazione proposte.
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   // Block cross-origin POSTs in production (dev is allowed).
@@ -25,6 +28,24 @@ export async function POST(req: NextRequest) {
 
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/**
+ * Lascia traccia nello storico del progetto quando la generazione proposte non
+ * è nemmeno partita: senza questo il progetto resta in stato "nuovo" e in
+ * dashboard sembra che l'AI stia ancora lavorando, per sempre.
+ */
+async function segnalaGenerazioneNonAvviata(
+  supabase: ReturnType<typeof getServiceClient>,
+  progettoId: string,
+  motivo: string
+): Promise<void> {
+  const { error } = await supabase.from('storico').insert({
+    progetto_id: progettoId,
+    azione: `[ERRORE] Generazione proposte non avviata: ${motivo}`,
+    utente: 'sistema',
+  })
+  if (error) logError('brief:segnala-generazione', error)
 }
 
 async function creaProgetto(req: NextRequest) {
@@ -101,13 +122,34 @@ async function creaProgetto(req: NextRequest) {
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
   backgroundJob(async () => {
     try {
-      await fetch(`${baseUrl}/api/genera-proposte`, {
+      // La generazione dura minuti: non aspettiamo la risposta completa, ci
+      // basta sapere se la richiesta è stata *accettata*. Dieci secondi senza
+      // risposta significano che la route sta lavorando; un rifiuto immediato
+      // (DNS, connessione, 401 di deployment protection) significa che non
+      // partirà mai, e questo va scritto da qualche parte.
+      const res = await fetch(`${baseUrl}/api/genera-proposte`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ progetto_id: progetto.id }),
+        signal: AbortSignal.timeout(10_000),
       })
+      console.log(`[brief] genera-proposte ha risposto ${res.status} per ${progetto.id}`)
+      if (!res.ok) {
+        await segnalaGenerazioneNonAvviata(
+          supabase,
+          progetto.id,
+          `${baseUrl}/api/genera-proposte ha risposto ${res.status}`
+        )
+      }
     } catch (err) {
+      // AbortError = nessuna risposta entro il timeout: è il caso normale,
+      // la generazione è in corso dentro la sua invocazione.
+      if (err instanceof Error && err.name === 'TimeoutError') {
+        console.log(`[brief] genera-proposte avviata per ${progetto.id} (in corso)`)
+        return
+      }
       logError('brief:genera-proposte', err)
+      await segnalaGenerazioneNonAvviata(supabase, progetto.id, errMessage(err))
     }
   })
 
