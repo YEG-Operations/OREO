@@ -2,17 +2,16 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import BriefUpload from '@/components/BriefUpload'
+import {
+  AV_OPTIONS,
+  ENTERTAINMENT_TIPO,
+  SETUP_SALA,
+  TIPOLOGIE_EVENTO,
+  TIPOLOGIE_LOCATION,
+  TRASPORTI_TIPO,
+} from '@/lib/brief-options'
 import type { BriefFormData } from '@/lib/types'
-
-const TIPOLOGIE_EVENTO = [
-  'Convention', 'Riunione', 'Incentive', 'Lancio Prodotto', 'Gala Dinner',
-  'Team Building', 'Conferenza', 'Workshop', 'Evento Ibrido', 'Altro'
-]
-const SETUP_SALA = ['Teatro', 'Banquet', 'Classroom', 'Cabaret', 'Standing', 'Boardroom', 'U-Shape']
-const AV_OPTIONS = ['Proiettore', 'LED Wall', 'Audio', 'Microfoni', 'Regia video', 'Streaming', 'Traduzione simultanea']
-const TIPOLOGIE_LOCATION = ['Qualsiasi', 'Hotel con sale', 'Museo', 'Teatro', 'Loft/Industriale', 'Palazzo storico', 'Rooftop', 'Spazio congressi', 'Ristorante con sala privata', 'Esterno/Giardino']
-const TRASPORTI_TIPO = ['Transfer Aeroporto/Stazione', 'Trasferimenti infra-evento']
-const ENTERTAINMENT_TIPO = ['DJ', 'Band/Musica live', 'Speaker/Motivatore', 'Sportivo/Testimonial', 'Show/Spettacolo', 'Animazione', 'Team building ludico']
 
 const initialForm: BriefFormData = {
   email_operatore: '',
@@ -39,9 +38,27 @@ export default function BriefPage() {
   const [step, setStep] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  // Campi compilati dall'estrazione automatica: li segnaliamo in alto perché
+  // vanno riletti prima dell'invio (l'AI può interpretare male il documento).
+  const [campiAuto, setCampiAuto] = useState<string[]>([])
 
   const set = <K extends keyof BriefFormData>(key: K, value: BriefFormData[K]) =>
     setForm(prev => ({ ...prev, [key]: value }))
+
+  /** Applica al form i dati estratti dal documento di brief caricato. */
+  const applyExtracted = (
+    patch: Partial<BriefFormData>,
+    meta: { nome: string; testo: string; campi: string[] }
+  ) => {
+    setForm(prev => ({
+      ...prev,
+      ...patch,
+      documento_nome: meta.nome,
+      documento_testo: meta.testo,
+    }))
+    setCampiAuto(meta.campi)
+    setError('')
+  }
 
   const toggleArray = (key: 'location_av' | 'trasporti_tipo', value: string) => {
     setForm(prev => {
@@ -77,7 +94,18 @@ export default function BriefPage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-gray-900 mb-2">Nuovo Brief Evento</h1>
-      <p className="text-gray-600 mb-8">Compila tutti i dettagli per ricevere proposte personalizzate dai nostri fornitori.</p>
+      <p className="text-gray-600 mb-6">
+        Carica il brief del cliente (PDF o Word) e lascia che i campi si compilino da soli,
+        oppure inseriscili a mano.
+      </p>
+
+      {campiAuto.length > 0 && (
+        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <strong>{campiAuto.length} campi precompilati</strong>
+          {form.documento_nome ? ` da "${form.documento_nome}"` : ''}: controllali step per step
+          prima di inviare, l&apos;estrazione automatica può sbagliare.
+        </div>
+      )}
 
       {/* Stepper */}
       <div className="flex items-center gap-2 mb-8">
@@ -96,6 +124,17 @@ export default function BriefPage() {
         {/* Step 0: Referente */}
         {step === 0 && (
           <div className="space-y-4">
+            <BriefUpload onExtracted={applyExtracted} disabled={loading} />
+
+            <div className="relative py-2">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-white px-3 text-sm text-gray-500">oppure compila a mano</span>
+              </div>
+            </div>
+
             <h2 className="text-lg font-semibold mb-4">Dati Referente Cliente</h2>
             <div className="grid grid-cols-2 gap-4">
               <div><label className="label">Nome *</label><input className="input" value={form.nome_referente} onChange={e => set('nome_referente', e.target.value)} /></div>

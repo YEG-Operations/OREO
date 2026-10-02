@@ -258,6 +258,12 @@ export interface BriefFormData {
   segreteria: boolean
   app_evento: boolean
   note_generali: string
+
+  // Brief caricato come documento (PDF/Word): nome file e testo estratto.
+  // Finiscono in `brief_raw` così la generazione proposte può leggere il brief
+  // originale, oltre ai campi strutturati.
+  documento_nome?: string
+  documento_testo?: string
 }
 
 // Labels per le categorie
